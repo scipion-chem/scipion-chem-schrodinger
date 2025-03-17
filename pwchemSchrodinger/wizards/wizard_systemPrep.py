@@ -37,7 +37,7 @@ import pyworkflow.wizard as pwizard
 from pwem.objects import AtomStruct
 
 from pwchem.wizards import SelectElementWizard, GetRadiusProtein
-from pwchem.utils import pdbqt2other, getBaseFileName, convertToSdf
+from pwchem.utils import pdbqt2other, getBaseName, convertToSdf
 from pwchem.objects import SetOfSmallMolecules
 
 from ..protocols import *
@@ -84,7 +84,7 @@ class GetSoluteCharge(pwizard.Wizard):
                 if pdbFile.endswith('.pdbqt'):
                     pdbqtFile = pdbFile
                     pdbFile = pdbqt2other(protocol, pdbqtFile,
-                                          protocol._getTmpPath(getBaseFileName(pdbqtFile) + '.pdb'))
+                                          protocol._getTmpPath(getBaseName(pdbqtFile) + '.pdb'))
                 structName = os.path.splitext(os.path.basename(pdbFile))[0]
                 soluteFile = protocol._getTmpPath(structName + '.mae')
                 if not os.path.exists(soluteFile):
@@ -96,7 +96,7 @@ class GetSoluteCharge(pwizard.Wizard):
                 mol = protocol.getSpecifiedMol()
                 molFile = mol.getPoseFile()
                 if molFile.endswith('.pdbqt'):
-                    sdfFile = protocol._getTmpPath(getBaseFileName(molFile) + '.sdf')
+                    sdfFile = protocol._getTmpPath(getBaseName(molFile) + '.sdf')
                     molFile = convertToSdf(protocol, molFile, sdfFile)
 
                 molMaeFile = protocol._getTmpPath(mol.getUniqueName() + '.maegz')
@@ -108,7 +108,7 @@ class GetSoluteCharge(pwizard.Wizard):
                     targetFile = protocol.inputSetOfMols.get().getProteinFile()
                     if targetFile.endswith('.pdbqt'):
                         targetFile = pdbqt2other(protocol, targetFile,
-                                                 protocol._getTmpPath(getBaseFileName(targetFile) + '.pdb'))
+                                                 protocol._getTmpPath(getBaseName(targetFile) + '.pdb'))
                     targetName = os.path.splitext(os.path.basename(targetFile))[0]
                     targetMaeFile = protocol._getTmpPath(targetName + '.maegz')
                     check_call('{} {} {}'.format(structConvertProg, targetFile, targetMaeFile), shell=True)
