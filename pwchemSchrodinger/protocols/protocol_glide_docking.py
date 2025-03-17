@@ -107,8 +107,11 @@ class ProtSchrodingerGlideDocking(ProtSchrodingerGrid):
 
     def _defineGeneralGlideParams(self, form, condition='True'):
         group = form.addGroup('General params', condition=condition)
+        group.addParam('dockingThreads', IntParam, default=2, label='No. of docking subjobs: ',
+                       help='Maximum number of docking subjobs. Each subjobs will be run in a processor. \n'
+                            'This number should generally be lower than the numbe rof threads, since each subjob will '
+                            'require a license token.')
         group.addParam('dockingMethod', EnumParam, default=0, label='Docking method: ',
-
                        choices=['Flexible dock (confgen)', 'Rigid dock (rigid)', 'Refine (do not dock, mininplace)',
                                 'Score in place (do not dock, inplace)'],
                        help='Glide method to use for docking')

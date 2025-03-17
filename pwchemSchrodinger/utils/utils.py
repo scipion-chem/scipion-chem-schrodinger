@@ -208,6 +208,14 @@ def convertMAEMolSet(molSet, outDir, njobs, updateSet=True, subset=True):
     else:
         return convMols
 
+def convertReceptor2PDB(maeFile, outPDB=None, cwd=None):
+    name, ext = os.path.splitext(maeFile)
+    if not outPDB:
+        outPDB = os.path.abspath(maeFile.replace(ext, '.pdb'))
+    command = '{} {} {}'.format(structConvertProg, os.path.abspath(maeFile), outPDB)
+    subprocess.check_call(command, shell=True, cwd=cwd)
+    return outPDB
+
 # ----------------------- Protocol utils -----------------------
 def saveMolecule(protocols, molFn, molSet, oriMol):
     while protocols.saving:

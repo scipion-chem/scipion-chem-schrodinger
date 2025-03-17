@@ -167,7 +167,7 @@ class ProtSchrodingerSiteMap(EMProtocol):
         atomLines, hetatmLines = '', ''
         idsDic = {}
         for pFile in pdbFiles:
-            fileId = pFile.split('-')[1].split('.')[0]
+            fileId = pFile.split('-')[-1].split('.')[0]
             with open(pFile) as fpdb:
                 for line in fpdb:
                     if line.startswith('TITLE') and '_site_' in line:
@@ -190,7 +190,7 @@ class ProtSchrodingerSiteMap(EMProtocol):
     def renamePDBFiles(self, pdbFiles, idsDic):
         tmpFiles = []
         for pFile in pdbFiles:
-            fileId = pFile.split('-')[1].split('.')[0]
+            fileId = pFile.split('-')[-1].split('.')[0]
             if fileId in idsDic:
                 tmpFile = pFile.replace('-{}.pdb'.format(fileId), '-{}tmp.pdb'.format(idsDic[fileId]))
                 shutil.move(pFile, tmpFile)
