@@ -55,10 +55,8 @@ If you want the latest changes and developments, user devel branch.
 
 - **Binary files** 
 
-Atom_struct_utils plugin is a pure Python module, no binary files are required.
-
 The **Schrodinger software must be installed separately**, as it requires a license.
-You must either install it in the EM_ROOT (typically: SCIPION_HOME/software/em/Schrodinger2021-3)
+You must either install it in the EM_ROOT (typically: SCIPION_HOME/software/em/Schrodinger202*-*)
 or define the Schrodinger path in scipion.conf as SCHRODINGER_HOME
 
 - **Tests**

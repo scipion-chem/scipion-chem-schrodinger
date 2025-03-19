@@ -39,7 +39,7 @@ from .bibtex import _bibtexStr
 from .constants import *
 
 _logo = 'schrodinger_logo.png'
-DEFAULT_VERSION = '2021-3'
+DEFAULT_VERSION = '2024-4'
 SCHRODINGER_DIC = {'name': 'schrodinger', 'version': 'SCHRODINGER_VERSION', 'home': 'SCHRODINGER_HOME',
                    'SGL': 'MAESTRO_SGL'}
 
