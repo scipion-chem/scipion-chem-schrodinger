@@ -40,12 +40,11 @@ from pwchem.utils import pdbqt2other, convertToSdf
 from .. import Plugin as schrodingerPlugin
 from ..constants import ADD_COUNTERION, SIZE_LIST, ANGLES, SIZE_SINGLE, ADD_SALT, SOLVENT, MSJ_SYSPREP
 from ..objects import SchrodingerAtomStruct, SchrodingerSystem
-from ..utils import getChargeFromMAE, setAborted, getJobName, getSchJobId
+from ..utils import getChargeFromMAE, setAborted, getJobName, getSchJobId, isMaeFile
 
 multisimProg = schrodingerPlugin.getHome('utilities/multisim')
 jobControlProg = schrodingerPlugin.getHome('jobcontrol')
 structConvertProg = schrodingerPlugin.getHome('utilities/structconvert')
-maeSubsetProg = schrodingerPlugin.getHome('utilities/maesubset')
 progLigPrep = schrodingerPlugin.getHome('ligprep')
 
 STRUCTURE, LIGAND = 0, 1
@@ -192,48 +191,31 @@ class ProtSchrodingerDesmondSysPrep(EMProtocol):
         self._insertFunctionStep('systemPreparationStep')
 
     def solutePreparationStep(self):
+        soluteFile = self.getMaeSoluteFile()
         if self.inputFrom.get() == STRUCTURE:
             if isinstance(self.inputStruct.get(), SchrodingerAtomStruct):
-                self.soluteFile = self.inputStruct.get().getFileName()
+                inFile = self.inputStruct.get().getFileName()
+                os.link(inFile, soluteFile)
             else:
-                pdbFile = self.getPdbFile()
-                structName = os.path.splitext(os.path.basename(pdbFile))[0]
-                self.soluteFile = os.path.abspath(self._getExtraPath(structName + '.mae'))
-                if not os.path.exists(self.soluteFile):
-                  if self.prepareTarget.get():
-                      self.soluteFile = self.prepareTargetFile(pdbFile, self.soluteFile)
-                  else:
-                      self.runJob(structConvertProg, '{} {}'.format(pdbFile, self.soluteFile))
+                self.getReceptorMaeFile(soluteFile)
 
         elif self.inputFrom.get() == LIGAND:
-            self.soluteFile = self._getExtraPath('complexSolute.mae')
-            if not os.path.exists(self.soluteFile):
-                mol = self.getSpecifiedMol()
-                molFile = mol.getPoseFile()
-                if molFile.endswith('.pdbqt'):
-                    molFile = convertToSdf(self, molFile)
+            mol = self.getSpecifiedMol()
+            molFile = mol.getPoseFile()
 
-                if self.prepareLigand.get():
-                    molMaeFile = self.prepareLigandFile(molFile)
-                else:
-                    molMaeFile = self._getExtraPath(mol.getUniqueName() + '.maegz')
-                    self.runJob(structConvertProg, '{} {}'.format(molFile, molMaeFile))
+            if self.prepareLigand.get():
+                molMaeFile = self.prepareLigandFile(molFile)
+            else:
+                molMaeFile = self._getExtraPath(mol.getUniqueName() + '.maegz')
+                self.runJob(structConvertProg, f'{molFile} {molMaeFile}')
 
-                if hasattr(mol, 'structFile'):
-                    targetMaeFile = mol.structFile
-                else:
-                    pdbFile = self.getPdbFile()
-                    targetName = os.path.splitext(os.path.basename(pdbFile))[0]
-                    targetMaeFile = os.path.abspath(self._getExtraPath(targetName + '.maegz'))
-                    if self.prepareTarget.get():
-                        targetMaeFile = self.prepareTargetFile(pdbFile, targetMaeFile)
-                    else:
-                        self.runJob(structConvertProg, '{} {}'.format(pdbFile, targetMaeFile))
+            recMaeFile = os.path.abspath(self._getExtraPath('receptor.mae'))
+            self.getReceptorMaeFile(recMaeFile)
 
-                self.runJob('zcat', '{} {} > {}'.format(molMaeFile, targetMaeFile, self.soluteFile))
+            self.mergeComplexFiles(molMaeFile, recMaeFile, soluteFile)
 
     def systemPreparationStep(self):
-        maeFile = self.soluteFile
+        maeFile = self.getMaeSoluteFile()
         sysName = maeFile.split('/')[-1].split('.')[0]
         jobName = sysName + '_' + str(rd.randint(1000000, 9999999))
 
@@ -322,40 +304,61 @@ class ProtSchrodingerDesmondSysPrep(EMProtocol):
         super().setAborted()
         setAborted(getSchJobId(self), getJobName(self))
 
-    def getPdbFile(self):
+    def getMaeSoluteFile(self):
+      return os.path.abspath(self._getExtraPath('complexSolute.mae'))
+
+    def getReceptorFile(self):
       if self.inputFrom.get() == STRUCTURE:
-          proteinFile = self.inputStruct.get().getFileName()
+          receptorFile = self.inputStruct.get().getFileName()
       elif self.inputFrom.get() == LIGAND:
-          proteinFile = self.inputSetOfMols.get().getProteinFile()
-      inName, inExt = os.path.splitext(os.path.basename(proteinFile))
+          receptorFile = self.inputSetOfMols.get().getProteinFile()
+      return receptorFile
+
+    def getReceptorMaeFile(self, outFile):
+      recFile = self.getReceptorFile()
+      if isMaeFile(recFile):
+        recMaeFile = recFile
+      else:
+        recPdbFile = self.getPdbFile(recFile)
+        recMaeFile = self._getTmpPath('recMaeFile.mae')
+        self.runJob(structConvertProg, f'{recPdbFile} {recMaeFile}')
+
+      if self.prepareTarget.get():
+        self.prepareTargetFile(recMaeFile, outFile)
+      else:
+        os.link(recMaeFile, outFile)
+      return outFile
+
+    def getPdbFile(self, recFile):
+      inName, inExt = os.path.splitext(os.path.basename(recFile))
 
       if inExt == '.pdb':
-          return os.path.abspath(proteinFile)
+          return os.path.abspath(recFile)
       else:
         pdbFile = os.path.abspath(os.path.join(self._getExtraPath(inName + '.pdb')))
         if inExt == '.pdbqt':
-            pdbqt2other(self, proteinFile, pdbFile)
+            pdbqt2other(self, recFile, pdbFile)
         else:
-            toPdb(proteinFile, pdbFile)
+            toPdb(recFile, pdbFile)
         return os.path.abspath(pdbFile)
 
-    def prepareLigandFile(self, sdfFile, maeFile=None):
-        # Manage files from autodock: 1) Convert to readable by schro (SDF). 2) correct preparation.
-        baseName = os.path.splitext(os.path.basename(sdfFile))[0]
-        if not sdfFile.endswith('.sdf'):
-            sdfFile = convertToSdf(self, sdfFile)
+    def prepareLigandFile(self, molFile, maeFile=None):
+        if isMaeFile(molFile):
+          inext = 'mae'
+        else:
+          inext, molFile = 'sd', convertToSdf(self, molFile)
 
+        baseName = os.path.splitext(os.path.basename(molFile))[0]
         tmpmaeFile = os.path.abspath(self._getExtraPath(baseName + '_tmp.maegz'))
-        args = " -R h -a -isd {} -omae {}".format(sdfFile, tmpmaeFile)
+        args = f" -R h -a -i{inext} {os.path.abspath(molFile)} -omae {tmpmaeFile}"
         self.runJob(progLigPrep, args, cwd=self._getExtraPath())
         while not os.path.exists(tmpmaeFile):
             time.sleep(0.2)
 
         if not maeFile:
             maeFile = os.path.abspath(self._getExtraPath(baseName + '.maegz'))
-
-        args = " -n 1 {} -o {}".format(tmpmaeFile, maeFile)
-        self.runJob(maeSubsetProg, args, cwd=self._getExtraPath())
+        args = " -n 1 {} {}".format(tmpmaeFile, maeFile)
+        self.runJob(structConvertProg, args, cwd=self._getExtraPath())
 
         os.remove(tmpmaeFile)
         return maeFile
@@ -366,3 +369,17 @@ class ProtSchrodingerDesmondSysPrep(EMProtocol):
         args += '%s %s' % (os.path.abspath(inFile), os.path.abspath(outFile))
         self.runJob(prog, args, cwd=self._getPath())
         return outFile
+
+    def mergeComplexFiles(self, molFile, recFile, complexFile):
+      tmpMol, tmpRec = self._getTmpPath('molMae.mae'), self._getTmpPath('recMae.mae')
+      if molFile.endswith('gz'):
+        self.runJob('zcat', f'{molFile} > {tmpMol}')
+      else:
+        os.link(molFile, tmpMol)
+
+      if recFile.endswith('gz'):
+        self.runJob('zcat', f'{recFile} > {tmpRec}')
+      else:
+        os.link(recFile, tmpRec)
+
+      self.runJob('cat', f'{tmpMol} {tmpRec} > {complexFile}')

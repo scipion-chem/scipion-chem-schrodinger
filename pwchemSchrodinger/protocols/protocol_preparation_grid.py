@@ -236,7 +236,6 @@ class ProtSchrodingerGrid(EMProtocol):
         fnJob = os.path.abspath(os.path.join(fnGridDir, gridName)) + '.inp'
         with open(fnJob, 'w') as fh:
             fh.write("GRIDFILE %s.zip\n" % gridName)
-            fh.write("OUTPUTDIR %s\n" % fnGridDir)
             fh.write("RECEP_FILE %s\n" % os.path.abspath(self.getInputMaeFile()))
             fh.write("INNERBOX %d,%d,%d\n" % (self.getInnerBox(pocket)))
             fh.write("ACTXRANGE %d\n" % self.getOuterBox(pocket)[0])

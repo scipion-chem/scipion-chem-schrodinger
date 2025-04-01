@@ -44,7 +44,6 @@ from ..utils import getNumberOfStructures
 structConvertProg = schrodingerPlugin.getHome('utilities/structconvert')
 progLigPrep = schrodingerPlugin.getHome('ligprep')
 progPrepWizard = schrodingerPlugin.getHome('utilities/prepwizard')
-maeSubsetProg = schrodingerPlugin.getHome('utilities/maesubset')
 mmgbsaProg = schrodingerPlugin.getHome('prime_mmgbsa')
 
 FNONE, FTHRES, FAUT = 0, 1, 2
@@ -291,8 +290,8 @@ class ProtSchrodingerMMGBSA(EMProtocol):
         for nSubMol in nSubMols:
           lastMol = firstMol + nSubMol
           maeFile = os.path.basename(dockFile).replace('.mae', f'_{firstMol}-{lastMol-1}.mae')
-          args = f' -n "1, {firstMol}:{lastMol-1}" {os.path.abspath(dockFile)} -o {maeFile}'
-          self.runJob(maeSubsetProg, args, cwd=outDir)
+          args = f' -n "1, {firstMol}:{lastMol-1}" {os.path.abspath(dockFile)} {maeFile}'
+          self.runJob(structConvertProg, args, cwd=outDir)
           firstMol = lastMol
           maeFiles.append(os.path.join(outDir, maeFile))
       else:

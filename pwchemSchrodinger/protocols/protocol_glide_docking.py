@@ -47,7 +47,6 @@ progLigPrep = schrodinger_plugin.getHome('ligprep')
 structConvertProg = schrodinger_plugin.getHome('utilities/structconvert')
 structCatProg = schrodinger_plugin.getHome('utilities/structcat')
 propListerProg = schrodinger_plugin.getHome('utilities/proplister')
-maeSubsetProg = schrodinger_plugin.getHome('utilities/maesubset')
 
 dockMethodDic = {0: 'confgen', 1: 'rigid', 2: 'mininplace', 3: 'inplace'}
 dockPrecisionDic = {0: 'HTVS', 1: 'SP', 2: 'XP'}
@@ -310,7 +309,6 @@ class ProtSchrodingerGlideDocking(ProtSchrodingerGrid):
         fnJob = os.path.abspath(os.path.join(fnGridDir, gridName)) + '.inp'
         with open(fnJob, 'w') as fh:
             fh.write("GRIDFILE %s.zip\n" % gridName)
-            fh.write("OUTPUTDIR %s\n" % fnGridDir)
             fh.write("RECEP_FILE %s\n" % os.path.abspath(self.getInputMaeFile()))
             fh.write("INNERBOX {},{},{}\n".format(*(self.getInnerBox(pocket))))
             fh.write("ACTXRANGE %d\n" % self.getOuterBox(pocket)[0])
@@ -438,12 +436,12 @@ class ProtSchrodingerGlideDocking(ProtSchrodingerGrid):
     def divideMaeComplex(self, maeFile, posIdx=1, outDir=None):
       if not outDir:
         outDir = os.path.dirname(maeFile)
-      molFile, recFile = os.path.join(outDir, getBaseName(maeFile) + f'_lig_{posIdx}.maegz'), \
+      molFile, recFile = os.path.join(outDir, getBaseName(maeFile) + f'_lig_{posIdx}.mae'), \
                          os.path.join(outDir, getBaseName(maeFile) + '_rec.maegz')
-      args = f' -n 1 {os.path.abspath(maeFile)} -o {os.path.abspath(recFile)}'
-      subprocess.run(f'{maeSubsetProg} {args}', check=True, capture_output=True, text=True, shell=True, cwd=outDir)
-      args = f' -n {posIdx+1} {os.path.abspath(maeFile)} -o {os.path.abspath(molFile)}'
-      subprocess.run(f'{maeSubsetProg} {args}', check=True, capture_output=True, text=True, shell=True, cwd=outDir)
+      args = f' -n 1 {os.path.abspath(maeFile)} {os.path.abspath(recFile)}'
+      subprocess.run(f'{structConvertProg} {args}', check=True, capture_output=True, text=True, shell=True, cwd=outDir)
+      args = f' -n {posIdx+1} {os.path.abspath(maeFile)} {os.path.abspath(molFile)}'
+      subprocess.run(f'{structConvertProg} {args}', check=True, capture_output=True, text=True, shell=True, cwd=outDir)
 
       return recFile, molFile
 
@@ -513,8 +511,8 @@ class ProtSchrodingerGlideDocking(ProtSchrodingerGrid):
         for mFile in maeFiles[1:]:
             mFile = os.path.abspath(self._getExtraPath(mFile))
             tFile = os.path.abspath(self._getTmpPath(getBaseName(mFile) + '.maegz'))
-            args = f' -n 2: {mFile} -o {tFile}'
-            self.runJob(maeSubsetProg, args, cwd=self._getTmpPath())
+            args = f' -n 2: {mFile} {tFile}'
+            self.runJob(structConvertProg, args, cwd=self._getTmpPath())
             noRecMaeFiles.append(tFile)
 
         outName = 'dockedMolecules.maegz'

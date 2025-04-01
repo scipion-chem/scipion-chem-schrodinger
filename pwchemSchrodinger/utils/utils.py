@@ -42,7 +42,6 @@ from ..constants import TIMESTEP, PRESSURE, BAROSTAT, BROWNIAN, TENSION, RESTRAI
 from .. import Plugin as schrodingerPlugin
 
 structConvertProg = schrodingerPlugin.getHome('utilities/structconvert')
-maeSubsetProg = schrodingerPlugin.getHome('utilities/maesubset')
 jobControlProg = schrodingerPlugin.getHome('jobcontrol')
 
 def putMolFileTitle(fn, title='', ext='mol2'):
@@ -172,19 +171,10 @@ def convertMAE2Mol2(mol, outDir, subset=True):
     fnOut = os.path.join(outDir, '{}.{}'.format(molName, 'mol2'))
 
     try:
+        args = f'{os.path.abspath(fnRaw)} {os.path.abspath(fnOut)} '
         if subset:
-            fnAux = os.path.join(outDir, f"tmp_{molName}_{poseId}.mae")
-            args = f"-n {poseId} {os.path.abspath(fnRaw)} -o {fnAux}"
-            subprocess.run(f'{maeSubsetProg} {args}', check=True, capture_output=True, text=True, shell=True)
-            isAux = True
-        else:
-            fnAux = os.path.abspath(fnRaw)
-            isAux = False
-
-        args = f'{fnAux} {os.path.abspath(fnOut)}'
+            args += f'-n {poseId}'
         subprocess.run(f'{structConvertProg} {args}', check=True, capture_output=True, text=True, shell=True)
-        if isAux:
-            os.remove(fnAux)
 
         if os.path.splitext(fnOut)[1] == '.mol2':
             fnOut = relabelAtomsMol2(fnOut)
@@ -207,6 +197,9 @@ def convertMAEMolSet(molSet, outDir, njobs, updateSet=True, subset=True):
         return molSet
     else:
         return convMols
+
+def isMaeFile(molFile):
+    return molFile.endswith('.mae') or molFile.endswith('.maegz')
 
 def convertReceptor2PDB(maeFile, outPDB=None, cwd=None):
     name, ext = os.path.splitext(maeFile)

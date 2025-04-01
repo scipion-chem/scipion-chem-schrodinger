@@ -44,7 +44,6 @@ from ..protocols.protocol_glide_docking import ProtSchrodingerGlideDocking
 
 prepWizardProg = schrodingerPlugin.getHome('utilities/prepwizard')
 structConvertProg = schrodingerPlugin.getHome('utilities/structconvert')
-maeSubsetProg = schrodingerPlugin.getHome('utilities/maesubset')
 propListerProg = schrodingerPlugin.getHome('utilities/proplister')
 
 ifdProg = schrodingerPlugin.getHome('ifd')
@@ -791,8 +790,8 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
 
   def splitComplexFiles(self, oFile, oDir, title, idx):
     complexFile = os.path.join(oDir, f'ifd_{title}_{idx}.maegz')
-    args = f' -n {idx} {oFile} -o {complexFile}'
-    subprocess.run(f'{maeSubsetProg} {args}', check=True, capture_output=True, text=True, shell=True, cwd=oDir)
+    args = f' -n {idx} {oFile} {complexFile}'
+    subprocess.run(f'{structConvertProg} {args}', check=True, capture_output=True, text=True, shell=True, cwd=oDir)
 
     args = f' -m pdb -many_files {complexFile} {complexFile}'
     subprocess.run(f'{runPath} {splitProg} {args}', check=True, capture_output=True, text=True, shell=True,
