@@ -346,7 +346,7 @@ class ProtSchrodingerDesmondSysPrep(EMProtocol):
         if isMaeFile(molFile):
           inext = 'mae'
         else:
-          inext, molFile = 'sd', convertToSdf(self, molFile)
+          inext, molFile = 'sd', convertToSdf(self, molFile, addHydrogens=True)
 
         baseName = os.path.splitext(os.path.basename(molFile))[0]
         tmpmaeFile = os.path.abspath(self._getExtraPath(baseName + '_tmp.maegz'))
