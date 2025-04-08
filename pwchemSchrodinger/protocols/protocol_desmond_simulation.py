@@ -268,8 +268,7 @@ class ProtSchrodingerDesmondMD(EMProtocol):
     def _validate(self):
         errors = []
         if not self.workFlowSteps.get():
-            msjDic = createMSJDic(self)
-            errors += self.validateAnneal(msjDic)
+            errors += ['You need to define some simulation. Try the default MD workflows in doubt.']
         else:
             workSteps = self.workFlowSteps.get().split('\n')
             if '' in workSteps:
