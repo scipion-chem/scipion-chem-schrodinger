@@ -134,7 +134,7 @@ class DesmondSimulationViewer(pwviewer.ProtocolViewer):
         #Run the analysis GUI
         system = self.getMDSystem()
         inSys = os.path.abspath(system.getFileName())
-        eventScript = schPlugin.getHome('mmshare-v5.5/python/scripts/event_analysis.py')
+        eventScript = schPlugin.getMMshareDir('python/scripts/event_analysis.py')
         args = 'gui ' + os.path.abspath(inSys)
         schPlugin.runSchrodingerScript(program=eventScript, args=args, cwd=self.protocol._getExtraPath(),
                                        popen=True)
