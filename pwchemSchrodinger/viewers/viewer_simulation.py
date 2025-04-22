@@ -105,7 +105,7 @@ class DesmondSimulationViewer(pwviewer.ProtocolViewer):
     def _showCompleteAnalysis(self, paramName=None):
         system = self.getMDSystem()
         #Generates the event analysis file (eaf) with instructions
-        eventScript = schPlugin.getHome('mmshare-v5.5/python/scripts/event_analysis.py')
+        eventScript = schPlugin.getMMshareDir('python/scripts/event_analysis.py')
         baseName = system.getBaseName()
         inEAF = self.protocol._getExtraPath('{}-in.eaf'.format(baseName))
         outEAF = '{}_pl_complete.eaf'.format(baseName)
