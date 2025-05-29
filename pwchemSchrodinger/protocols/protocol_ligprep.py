@@ -129,7 +129,7 @@ class ProtSchrodingerLigPrep(EMProtocol):
 
 
     def getLigPrepArgs(self, mol):
-        fnSmall = mol.getFileName()
+        fnSmall = os.path.abspath(mol.getFileName())
         fnBase = getBaseFileName(fnSmall)
         fnRoot = getBaseName(fnSmall)
 
@@ -154,11 +154,11 @@ class ProtSchrodingerLigPrep(EMProtocol):
             args += " -bff 16"
 
         if fnBase.endswith('.smi'):
-            args += " -ismi ../tmp/%s" % (fnBase)
+            args += f" -ismi {fnSmall}"
         elif fnBase.endswith('.mae') or fnBase.endswith('.maegz'):
-            args += " -imae ../tmp/%s" % (fnBase)
+            args += f" -imae {fnSmall}"
         elif fnBase.endswith('.sdf'):
-            args += " -isd ../tmp/%s" % (fnBase)
+            args += f" -isd {fnSmall}"
         else:
             fnSDF = self._getTmpPath(fnRoot + '.sdf')
             self.runJob(progStructConvert, '{} {}'.format(fnSmall, fnSDF))
