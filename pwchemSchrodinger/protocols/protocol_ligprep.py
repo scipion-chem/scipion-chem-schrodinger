@@ -34,7 +34,7 @@ from pwem.protocols import EMProtocol
 
 # Scipion chem imports
 from pwchem.objects import SetOfSmallMolecules, SmallMolecule
-from pwchem.utils import getBaseName
+from pwchem.utils import getBaseName, getBaseFileName
 
 # Plugin imports
 from .. import Plugin
@@ -48,14 +48,13 @@ OUTPUTATTRIBUTE = "outputSmallMolecules"
 OUTPUTATTRIBUTEDROPPED = "outputSmallMoleculesDropped"
 
 class ProtSchrodingerLigPrep(EMProtocol):
-    """Schrodinger's LigPrep is a program to prepare ligand libraries"""
+    """Schrodinger's LigPrep is a program to prepare ligand libraries
+    """
+
     _label = 'ligand preparation (ligprep)'
     _possibleOutputs = {OUTPUTATTRIBUTE: SetOfSmallMolecules, OUTPUTATTRIBUTEDROPPED: SetOfSmallMolecules}
+    stepsExecutionMode = STEPS_PARALLEL
     saving = False
-
-    def __init__(self, **kwargs):
-        EMProtocol.__init__(self, **kwargs)
-        self.stepsExecutionMode = STEPS_PARALLEL
 
     def _defineParams(self, form):
         form.addSection(label='Input')
@@ -99,90 +98,77 @@ class ProtSchrodingerLigPrep(EMProtocol):
 
         # --------------------------- INSERT steps functions --------------------
     def _insertAllSteps(self):
-        iniStep = self._insertFunctionStep('initializeStep')
-        prepSteps=[]
+        prepSteps = []
         for mol in self.inputSmallMolecules.get():
-            pStep = self._insertFunctionStep('ligPrepStep', mol.clone(), prerequisites=[iniStep])
+            pStep = self._insertFunctionStep(self.ligPrepStep, mol.clone(), prerequisites=[])
             prepSteps.append(pStep)
-        self._insertFunctionStep('createOutputStep', prerequisites=prepSteps)
+        self._insertFunctionStep(self.createOutputStep, prerequisites=prepSteps)
 
-    def initializeStep(self):
-        self.outputSmallMolecules = SetOfSmallMolecules().create(outputPath=self._getPath(), suffix='SmallMols')
-        self.outputSmallMoleculesDropped = SetOfSmallMolecules().create(outputPath=self._getPath(), suffix='SmallMolsDropped')
 
     def ligPrepStep(self, mol):
-        fnSmall = mol.smallMoleculeFile.get()
-        fnMol = os.path.split(fnSmall)[1]
-        fnRoot = os.path.splitext(fnMol)[0]
-
-        existingFiles = glob.glob(self._getExtraPath(fnRoot+"*"))
-        if len(existingFiles) == 0:
-            fnSmallExtra = self._getTmpPath(fnMol)
-            copyFile(fnSmall, fnSmallExtra)
-
-            args='-WAIT -LOCAL'
-            if self.ionization.get() != 0:
-                if self.ionization.get() == 1:
-                    args+=" -epik"
-                    if self.emb.get():
-                        args+=" -epik_metal_binding"
-                else:
-                    args+=" -i %d"%self.ionization.get()-2
-                args+=" -ph %f -pht %f"%(self.pH.get(),self.pHrange.get())
-
-            if self.stereoisomers.get():
-                args+=" -g"
-            else:
-                args+=" -ac -s %d"%self.Niso.get()
-
-            if self.optimization.get() == 1:
-                args+=" -bff 14"
-            elif self.optimization.get() == 2:
-                args+=" -bff 16"
-
-            if fnMol.endswith('.smi'):
-                args+=" -ismi tmp/%s" % (fnMol)
-            elif fnMol.endswith('.mae') or fnMol.endswith('.maegz'):
-                args += " -imae tmp/%s" % (fnMol)
-            elif fnMol.endswith('.sdf'):
-                args += " -isd tmp/%s" % (fnMol)
-            else:
-                fnSDF = self._getTmpPath(fnRoot + '.sdf')
-                self.runJob(progStructConvert, '{} {}'.format(fnSmall, fnSDF))
-                mol.smallMoleculeFile.set(fnSDF)
-
-                args += " -isd tmp/%s" % (fnRoot + '.sdf')
-
-            fnSDF = "extra/%s.sdf" % fnRoot
-            if not os.path.exists(fnSDF):
-                args+=" -osd %s"%fnSDF
-                self.runJob(progLigPrep, args, cwd=self._getPath())
-
-            if os.path.exists(self._getPath(fnSDF)):
-                fnOsdf="extra/o%s.sdf"%fnRoot
-                args = "%s %s -split-nstructures 1" % (fnSDF, fnOsdf)
-                self.runJob(progStructConvert, args, cwd=self._getPath())
-                for fn in glob.glob(self._getExtraPath("o%s*.sdf" % fnRoot)):
-                    fnOut = os.path.split(fn)[1]
-                    fnOut = self._getExtraPath(fnOut[1:])
-                    moveFile(fn, fnOut)
-                    saveMolecule(self, fnOut, self.outputSmallMolecules, mol)
-                if len(glob.glob(self._getExtraPath("%s-*.sdf" % fnRoot))) > 0:
-                    cleanPath(self._getPath(fnSDF))
-            else:
-                saveMolecule(self, fnSmall, self.outputSmallMoleculesDropped, mol)
-        else:
-            for fn in glob.glob(self._getExtraPath("%s*.sdf" % fnRoot)):
-                print("Reading %s" % fn)
-                saveMolecule(self, fn, self.outputSmallMolecules, mol)
+        args = self.getLigPrepArgs(mol)
+        self.runJob(progLigPrep, args, cwd=self._getExtraPath())
 
     def createOutputStep(self):
-        if len(self.outputSmallMolecules)>0:
-            self._defineOutputs(**{OUTPUTATTRIBUTE: self.outputSmallMolecules})
-            self._defineSourceRelation(self.inputSmallMolecules, self.outputSmallMolecules)
-        if len(self.outputSmallMoleculesDropped)>0:
-            self._defineOutputs(**{OUTPUTATTRIBUTEDROPPED: self.outputSmallMoleculesDropped})
-            self._defineSourceRelation(self.inputSmallMolecules, self.outputSmallMoleculesDropped)
+        oDir = self._getPath('outputMols')
+        if not os.path.exists(oDir):
+            os.mkdir(oDir)
+
+        self.outputSmallMolecules = SetOfSmallMolecules().create(outputPath=self._getPath(), suffix='SmallMols')
+        for mol in self.inputSmallMolecules.get():
+            molFile = mol.getFileName()
+            molFile = self._getExtraPath(f"{getBaseName(molFile)}.sdf")
+            outMolFiles = self.splitIsomers(molFile, oDir)
+
+            for oFile in outMolFiles:
+                self.renameSDFTitle(oFile)
+                saveMolecule(self, oFile, self.outputSmallMolecules, mol)
+
+        self._defineOutputs(**{OUTPUTATTRIBUTE: self.outputSmallMolecules})
+        self._defineSourceRelation(self.inputSmallMolecules, self.outputSmallMolecules)
+
+
+    def getLigPrepArgs(self, mol):
+        fnSmall = mol.getFileName()
+        fnBase = getBaseFileName(fnSmall)
+        fnRoot = getBaseName(fnSmall)
+
+        args = '-WAIT -LOCAL'
+        if self.ionization.get() != 0:
+            if self.ionization.get() == 1:
+                args += " -epik"
+                if self.emb.get():
+                    args += " -epik_metal_binding"
+            else:
+                args += " -i %d" % self.ionization.get() - 2
+            args += " -ph %f -pht %f" % (self.pH.get(), self.pHrange.get())
+
+        if self.stereoisomers.get():
+            args += " -g"
+        else:
+            args += " -ac -s %d" % self.Niso.get()
+
+        if self.optimization.get() == 1:
+            args += " -bff 14"
+        elif self.optimization.get() == 2:
+            args += " -bff 16"
+
+        if fnBase.endswith('.smi'):
+            args += " -ismi ../tmp/%s" % (fnBase)
+        elif fnBase.endswith('.mae') or fnBase.endswith('.maegz'):
+            args += " -imae ../tmp/%s" % (fnBase)
+        elif fnBase.endswith('.sdf'):
+            args += " -isd ../tmp/%s" % (fnBase)
+        else:
+            fnSDF = self._getTmpPath(fnRoot + '.sdf')
+            self.runJob(progStructConvert, '{} {}'.format(fnSmall, fnSDF))
+            mol.setFileName(fnSDF)
+
+            args += " -isd ../tmp/%s" % (fnRoot + '.sdf')
+
+        fnSDF = "%s.sdf" % fnRoot
+        args += " -osd %s" % fnSDF
+        return args
 
     def renameSDFTitle(self, sdfFile):
         tmpFile = self._getTmpPath(os.path.basename(sdfFile))
@@ -193,3 +179,20 @@ class ProtSchrodingerLigPrep(EMProtocol):
                 for line in fIn:
                     fOut.write(line)
         os.rename(tmpFile, sdfFile)
+
+    def splitIsomers(self, molFile, oDir):
+        prefix = 'ligPrepConfs_'
+
+        fnRoot = getBaseName(molFile)
+        fnOsdf = f"{prefix}{fnRoot}.sdf"
+        args = "%s %s -split-nstructures 1" % (getBaseFileName(molFile), fnOsdf)
+        self.runJob(progStructConvert, args, cwd=self._getExtraPath())
+
+        outMols = []
+        for fn in glob.glob(self._getExtraPath(f"{prefix}{fnRoot}*.sdf")):
+            fnOut = os.path.join(oDir, getBaseFileName(fn).replace(prefix, ''))
+            moveFile(fn, fnOut)
+            outMols.append(fnOut)
+
+        return outMols
+
