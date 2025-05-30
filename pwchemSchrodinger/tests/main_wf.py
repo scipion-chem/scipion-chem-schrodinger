@@ -47,8 +47,7 @@ class TestSchroProtPrep(BaseTest):
     def _runImportPDB(cls):
         cls.protImportPDB = cls.newProtocol(
             ProtImportPdb,
-            inputPdbData=0,
-            pdbId='4erf')
+            inputPdbData=1, pdbFile=cls.ds.getFile('PDBx_mmCIF/5ni1.pdb'))
         cls.proj.launchProtocol(cls.protImportPDB, wait=False)
 
     @classmethod
@@ -57,7 +56,7 @@ class TestSchroProtPrep(BaseTest):
         protPrepWizard = cls.newProtocol(
             ProtSchrodingerPrepWizard,
             cleanPDB=True, waters=False, rchains=True,
-            chain_name='{"model": 0, "chain": "C", "residues": 93}',
+            chain_name='{"model": 0, "chain": "C", "residues": 141}',
             **kwargs)
         protPrepWizard.inputAtomStruct.set(cls.protImportPDB)
         protPrepWizard.inputAtomStruct.setExtended('outputPdb')
@@ -214,8 +213,8 @@ class TestMMGBSA(TestExtractLigand):
     def _runImportPDB(cls):
         protImportPDB = cls.newProtocol(
             ProtImportPdb,
-            inputPdbData=0, pdbId='4ERF')
-        cls.launchProtocol(protImportPDB)
+            inputPdbData=1, pdbFile=cls.ds.getFile('PDBx_mmCIF/5ni1.pdb'))
+        cls.launchProtocol(protImportPDB, wait=False)
         cls.protImportPDB = protImportPDB
 
     @classmethod

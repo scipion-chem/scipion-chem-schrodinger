@@ -45,10 +45,11 @@ class TestDesmondSysPrep(BaseTest):
 
     @classmethod
     def _runImportPDB(cls):
-        cls.protImportPDB = cls.newProtocol(
+        protImportPDB = cls.newProtocol(
             ProtImportPdb,
-            inputPdbData=0, pdbId='4erf')
-        cls.proj.launchProtocol(cls.protImportPDB, wait=False)
+            inputPdbData=1, pdbFile=cls.ds.getFile('PDBx_mmCIF/5ni1.pdb'))
+        cls.launchProtocol(protImportPDB, wait=False)
+        cls.protImportPDB = protImportPDB
 
     @classmethod
     def _runTargetPreparation(cls):
@@ -56,7 +57,7 @@ class TestDesmondSysPrep(BaseTest):
         protPrepWizard = cls.newProtocol(
             ProtSchrodingerPrepWizard,
             cleanPDB=True, waters=False, rchains=True,
-            chain_name='{"model": 0, "chain": "C", "residues": 93}',
+            chain_name='{"model": 0, "chain": "C", "residues": 141}',
             **kwargs)
         protPrepWizard.inputAtomStruct.set(cls.protImportPDB)
         protPrepWizard.inputAtomStruct.setExtended('outputPdb')
