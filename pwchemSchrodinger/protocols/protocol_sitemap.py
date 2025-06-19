@@ -190,6 +190,7 @@ class ProtSchrodingerSiteMap(EMProtocol):
     def renamePDBFiles(self, pdbFiles, idsDic):
         tmpFiles = []
         for pFile in pdbFiles:
+            pFile = os.path.abspath(pFile)
             fileId = pFile.split('-')[-1].split('.')[0]
             if fileId in idsDic:
                 tmpFile = pFile.replace('-{}.pdb'.format(fileId), '-{}tmp.pdb'.format(idsDic[fileId]))
