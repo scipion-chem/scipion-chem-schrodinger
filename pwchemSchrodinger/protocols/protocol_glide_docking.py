@@ -340,27 +340,31 @@ class ProtSchrodingerGlideDocking(ProtSchrodingerGrid):
             if not os.path.exists(fnGrid):
                 shutil.copy(grid.getFileName(), fnGrid)
 
-        fnIn = os.path.join(gridDir, 'job_{}.inp'.format(gridId))
-        if not os.path.exists(fnIn):
-            with open(fnIn, 'w') as fhIn:
-                fhIn.write("GRIDFILE %s\n" % ("grid_{}.zip".format(gridId)))
-                fhIn.write("LIGANDFILE {}\n".format(os.path.abspath(self.getAllLigandsFile())))
+        fnGrid = os.path.join(gridDir, "grid_{}.zip".format(gridId))
+        if os.path.exists(fnGrid):
+            fnIn = os.path.join(gridDir, 'job_{}.inp'.format(gridId))
+            if not os.path.exists(fnIn):
+                with open(fnIn, 'w') as fhIn:
+                    fhIn.write("GRIDFILE %s\n" % ("grid_{}.zip".format(gridId)))
+                    fhIn.write("LIGANDFILE {}\n".format(os.path.abspath(self.getAllLigandsFile())))
 
-                argDic = self.getArgsDic(self.paramsDic2, self.enumParamsDic2)
-                for glideArg, value in argDic.items():
-                    fhIn.write(f"{glideArg} {value}\n")
+                    argDic = self.getArgsDic(self.paramsDic2, self.enumParamsDic2)
+                    for glideArg, value in argDic.items():
+                        fhIn.write(f"{glideArg} {value}\n")
 
-        args = "-WAIT -RESTART -LOCAL job_{}.inp".format(gridId)
-        self.runJob(glideProg, args, cwd=gridDir)
+            args = "-WAIT -RESTART -LOCAL job_{}.inp".format(gridId)
+            insistentRun(self, glideProg, args, cwd=gridDir)
 
-        if os.path.exists(os.path.join(gridDir, "job_{}_pv.maegz".format(gridId))):
-            self.runJob(propListerProg,
-                        '-p "title" -p "docking score" -p "glide ligand efficiency" -p "glide ligand efficiency sa" '
-                        '-p "glide ligand efficiency ln" -c -o %s %s'%\
-                        ("job_{}_pv.csv".format(gridId), "job_{}_pv.maegz".format(gridId)),
-                        cwd=gridDir)
+            if os.path.exists(os.path.join(gridDir, "job_{}_pv.maegz".format(gridId))):
+                self.runJob(propListerProg,
+                            '-p "title" -p "docking score" -p "glide ligand efficiency" -p "glide ligand efficiency sa" '
+                            '-p "glide ligand efficiency ln" -c -o %s %s'%\
+                            ("job_{}_pv.csv".format(gridId), "job_{}_pv.maegz".format(gridId)),
+                            cwd=gridDir)
+            else:
+                print('Failed to find ligands for grid {}'.format(gridId))
         else:
-            print('Failed to find ligands for grid {}'.format(gridId))
+            print('Failed to find grid {}'.format(gridId))
 
     def performOutputParsing(self, gridDirs, molLists, it, smallDict):
         allSmallList = []
