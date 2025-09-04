@@ -38,7 +38,34 @@ from pwchem.utils import writePDBLine, splitPDBLine
 from pwchem.constants import OPENBABEL_DIC
 
 class ProtSchrodingerSiteMap(EMProtocol):
-    """Calls sitemap to predict possible binding sites"""
+    """Calls sitemap to predict possible binding sites
+
+    User Documentation(AI GENERATED)
+    The ProtSchrodingerSiteMap class is designed to predict possible binding sites on a given protein structure using Schrodinger's SiteMap tool.
+    Binding site prediction is an essential step in drug discovery as it identifies the regions where a ligand can bind to the protein.
+    This class allows users to input a protein structure and obtain predicted binding sites that can be further analyzed for drug design or molecular docking studies.
+    The class defines several parameters, including the input protein structure and the number of predicted binding sites (maxsites). The jobName parameter allows the user to assign a
+    custom name to the job. These parameters are essential for configuring the SiteMap tool and determining how the binding site prediction is performed. The user can specify the number of
+    binding sites to be predicted, and optionally, provide a custom job name for better job management and identification.
+    The protocol is structured into several steps. The first step, convertStep, prepares the input structure. If the input file is in the .pdbqt format, it is converted to the .pdb format
+    using the Open Babel utility. The structure is then converted into a Maestro file (.mae) using Schrodinger's PrepWizard tool. This ensures that the protein structure is in the correct
+    format for SiteMap analysis.
+
+    The second step, sitemapStep, involves running the SiteMap tool itself. It takes the converted Maestro file and uses SiteMap to predict the binding sites. The predicted sites are
+    generated based on the protein structure, and the number of sites predicted is controlled by the maxsites parameter. The results are saved in an output file that contains the predicted binding sites.
+    The final step, createOutput, processes the results of the SiteMap prediction. If the binding sites are successfully predicted, the protocol creates a PDB file that includes the pocket
+    points and the corresponding structural regions of interest (ROIs). These ROIs are stored in a set and saved in a database for further use. The createOutputPDBFile method handles the conversion of
+    Maestro files to PDB format and merges the predicted pocket points with the original protein structure. The output includes a PDB file with the binding site points marked as HETATM entries, which can
+    be used for further docking studies.
+
+    In addition to the main protocol steps, several utility functions are included to support the execution of the protocol. For example, the getInputMaeFile function retrieves the converted Maestro file,
+    and the getJobName function generates the job name if not explicitly provided. The createOutputPDBFile function handles the merging of the protein and pocket files into a single PDB file with the binding
+    site information.
+
+    Overall, the ProtSchrodingerSiteMap class is a powerful tool for predicting binding sites on proteins, which is crucial for drug discovery and molecular docking simulations. The protocol automates the
+    process of preparing the protein structure, running the SiteMap tool, and processing the results to generate useful output files for further analysis. The class also provides options for customizing the
+    number of predicted binding sites and managing temporary files generated during the execution.
+      """
     _label = 'binding site prediction (sitemap)'
     _program = ""
 

@@ -55,7 +55,45 @@ class ProtSchrodingerGlideDocking(ProtSchrodingerGrid):
     """Calls glide to perform a docking of a set of compounds in a structural region defined by a grid.
        It is assumed that the input library of ligands is already prepared.
 
-       The dockinsScore is the Glide Docking Score and it is measured in kcal/mol"""
+       The dockinsScore is the Glide Docking Score and it is measured in kcal/mol
+    
+    User documentation(AI GENERATED):
+    This protocol automates the docking process of a set of ligands into a specified region of a protein or
+    molecular structure using the Glide docking software. Glide is a widely used molecular docking software that simulates the interaction between ligands
+    and protein targets to predict the binding affinity and pose of the ligand within the receptor's active site. The user can choose the docking 
+    region in three main ways: docking on the entire protein surface, docking on specific structural regions (ROIs), or docking based on predefined grids. 
+    This flexibility allows the user to tailor the docking process to the specific requirements of their study, such as focusing on a particular 
+    region of the protein that is crucial for ligand binding.
+
+    The protocol allows users to define key docking parameters that directly influence the accuracy and efficiency of the docking process. 
+    One of the most important parameters is docking precision, where users can choose from low (HTVS), medium (SP), or high (XP) precision levels. 
+    The precision determines the computational cost and the accuracy of the docking results, with high precision requiring more time and computational resources 
+    but providing more accurate predictions. Another important parameter is the docking method, which can be flexible (confgen) or rigid (rigid). 
+    Flexible docking allows the ligand to adjust its conformation during the docking process, simulating more realistic interactions with the protein, 
+    while rigid docking assumes the ligand remains in its original conformation. Additionally, users can specify the number of poses per ligand that they want to report,
+    which is the number of different binding orientations or configurations generated for each ligand. 
+
+    The protocol also includes advanced options for managing ligand-specific settings, such as partial charge usage and scaling factors for van der Waals radii. 
+    These settings control how the ligand's electrostatic and steric interactions are modeled during docking. For example, the ligVScale parameter adjusts the scaling of van der Waals radii, 
+    which can impact the accuracy of ligand-protein interaction predictions. The ligCCut parameter sets a cutoff for partial charges, affecting the way ligands interact 
+    with the protein's electrostatic field. Furthermore, there are options to apply Epik penalties, which correct for the ionization or tautomeric states of the ligands, 
+    ensuring that the most relevant protonation states are considered during docking.
+    
+    In addition to these parameters, the protocol offers several options for post-docking minimization and filtering. Post-docking minimization allows the user to refine 
+    the ligand poses after docking to account for small adjustments in the ligand's conformation, which may improve binding affinity predictions. The protocol also provides 
+    the option to filter docking results based on several criteria, such as RMSD (Root Mean Square Deviation), Coulomb-van der Waals energy, H-bond score, and metal score. 
+    These filters help to remove unrealistic or low-quality poses from the results, ensuring that only the most relevant and accurate predictions are considered.
+    The protocol also takes care of preparing input structures by converting them into the appropriate formats needed for docking. This may include converting protein 
+    structures and ligands into MAE (Maestro) or mol2 files. It handles all necessary preprocessing steps, ensuring that the structures are ready for the docking simulation. 
+    Once the docking process is complete, the protocol generates a docking results file that includes the binding poses and docking scores for each ligand. These results can 
+    then be used for further analysis, such as identifying the most promising ligands for experimental testing."""
+
+
+
+
+
+
+
     _label = 'docking (glide)'
     _program = ""
 
@@ -203,7 +241,7 @@ class ProtSchrodingerGlideDocking(ProtSchrodingerGrid):
         self._defineOuterGridParams(form, condition=notGridsCondition)
 
         group = form.addGroup('Ligands')
-        group.addParam('inputLibrary', PointerParam, pointerClass="SetOfSmallMolecules",
+        group.addParam('inputMolecules', PointerParam, pointerClass="SetOfSmallMolecules",
                        label='Input small molecules:', help='Input small molecules to be docked with Glide')
 
         group.addParam('convertOutput2Mol2', BooleanParam, label='Convert output to mol2: ', default=False,
@@ -269,7 +307,7 @@ class ProtSchrodingerGlideDocking(ProtSchrodingerGrid):
             shutil.copy(inFile, self._getExtraPath('inputReceptor{}'.format(ext)))
 
         # Create ligand files
-        ligSet = self.inputLibrary.get()
+        ligSet = self.inputMolecules.get()
 
         ligFormats = self.getLigSetFormats(ligSet)
         ligFiles = list(set([lig.getFileName() for lig in ligSet]))
@@ -401,7 +439,7 @@ class ProtSchrodingerGlideDocking(ProtSchrodingerGrid):
     def createOutputStep(self):
         nt = self.numberOfThreads.get()
         smallDict = {}
-        for small in self.inputLibrary.get():
+        for small in self.inputMolecules.get():
             fnSmall = small.getFileName()
             fnBase = getBaseName(fnSmall)
             if fnBase not in smallDict:

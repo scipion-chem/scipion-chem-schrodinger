@@ -51,7 +51,21 @@ STRUCTURE, LIGAND = 0, 1
 
 class ProtSchrodingerDesmondSysPrep(EMProtocol):
     """Calls Desmond molecular dynamics for the preparation of the system via solvatation, the addition of ions
-    and a force field"""
+    and a force field
+
+
+    User Documentation(AI GENERATED):
+    This protocol automates the preparation of a system for molecular dynamics using Desmond
+    which includes steps like solvation, ion addition and applying a force field.
+    The user can provide an atomic structure or a set of molecules for simulation
+    Key parameters, such as simulation time, solvent type, and ion addition can be specified.
+    The user also selects de boundary shape for the simulation box and defines whether ions should be added for charge neutralization.
+    Additionally, options for ligan preparation and simulation settings, such as termostats
+    and barostats, are configurable.The protocol runs the simulation and generates a summary file along
+    with the necesarry outputs fot further analysis.It allows flexibility in simulating systems with various
+    molecules or proteins and provides a comprehensive framework for simulating molecular
+    interactions and behaviors, essential in fields like drug design and molecular research."""
+
     _label = 'system preparation (desmond)'
     _program = ""
 

@@ -50,7 +50,40 @@ FNONE, FTHRES, FAUT = 0, 1, 2
 MAEFILE_EXTENSION = '.maegz'
 
 class ProtSchrodingerMMGBSA(EMProtocol):
-    """Optimizes the docking position and calculates the binding energy"""
+    """Optimizes the docking position and calculates the binding energy
+
+    User documentation(AI GENERATED):
+    The MM-GBSA (Molecular Mechanics Generalized Born Surface Area) protocol in Schrodinger is used for calculating the binding free energy between a ligand and its receptor, 
+    based on the results of a molecular docking simulation. It calculates this energy using a combination of molecular mechanics and a generalized Born method to estimate solvation 
+    effects, making it a useful tool in drug discovery for evaluating ligand binding affinity.
+    
+    The first part of the process is preparing the input molecules. The user provides a set of docked small molecules that have already been docked with a receptor. 
+    The protocol includes options for preparing the ligands and the receptor using Schrodinger’s LigPrep and PrepWizard tools, ensuring that they are in a correct and standardized 
+    format for further analysis. This step is particularly necessary if the docking was not originally performed in Schrodinger, as it may slightly modify the atomic positions to ensure 
+    consistency.
+    
+    The next step involves selecting flexible residues in the receptor for the binding energy calculation. The flexibility can be determined by the distance to the ligand, 
+    or a more advanced flexibility estimation can be used, which involves two stages of MMGBSA calculations. The first stage identifies flexible residues based on their proximity to 
+    the ligand, and the second stage performs the binding free energy calculation with these flexible residues. The user can adjust the flexibility threshold to define how close residues 
+    must be to the ligand to be considered flexible. Various options are available for how to define flexible regions, including whole residues, side chains, or just the polar hydrogens of 
+    residues.
+
+    The ligands themselves can be treated in different ways. The user can opt to use the charges present in the input ligand file or use the partial charges from the force field. 
+    The ligand can also be treated as rigid, which means no optimization will be performed on the ligand during the calculation, or it can be minimized as a rigid body.
+    Once the parameters are set, the protocol begins the ligand preparation process. The small molecules are converted into the necessary format for Schrodinger, typically Maestro (.mae) format, 
+    and if necessary, the ligands are prepared using LigPrep. The receptor file is also prepared and converted into the correct format using PrepWizard if required. 
+    Afterward, the MMGBSA calculation is performed, which involves calculating the binding energy between the ligand and the receptor, taking into account the flexible regions and 
+    the solvation effects.
+
+    After the calculations are complete, the results are saved and organized. The binding energies calculated for each ligand-receptor complex are stored and can be used for further analysis. 
+    The output includes the optimized structures of the ligands and their binding free energies. The output is organized into two sets: one for the successfully prepared ligands and one for 
+    the ligands that could not be prepared due to various issues, such as incorrect format or failure during preparation.
+    This protocol is useful for evaluating how well a ligand binds to its target receptor and estimating the binding free energy, which is a key metric in drug discovery and virtual screening. 
+    By using the MM-GBSA method, users can assess the strength of ligand-receptor interactions in a more detailed and physically realistic manner.""" 
+
+
+
+
     _label = 'MM-GBSA'
     _program = ""
 

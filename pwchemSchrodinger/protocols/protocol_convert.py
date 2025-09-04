@@ -44,7 +44,36 @@ molChoices = {"Maestro": 'maegz', 'PDB': 'pdb', "Sybyl Mol2": 'mol2', "Smiles": 
 targetChoices = {"Maestro": 'maegz', 'PDB': 'pdb'}
 
 class ProtSchrodingerConvert(EMProtocol):
-    """Convert a set of input ligands or a receptor structure to a specific file format"""
+    """Convert a set of input ligands or a receptor structure to a specific file format. 
+
+    User Documentation(AI Generated):
+ The Schrodinger Structure Format Converter protocol in the `scipion-chem-schrodinger` plugin, labeled as `convert`,
+ enables users to transform MAESTRO chemical structure files from/into different formats.
+ This protocol supports the conversion of either a set of small molecules or a target (receptor) structure,
+ depending on the user's needs. It is particularly useful in workflows where compatibility between
+ different molecular modeling tools is required, such as preparing inputs for docking or visualization software.
+
+ If the user selects small molecules, they must provide a `SetOfSmallMolecules` previously loaded into Scipion.
+ The protocol then offers a choice of output formats for the converted molecules. Supported formats include Maestro 
+ (`.maegz`), PDB (`.pdb`), Sybyl Mol2 (`.mol2`), Smiles (`.smi`), and V2000 SD (`.sdf`). Each molecule in the set is 
+ processed individually, and the results are stored together as a new `SetOfSmallMolecules` object.
+
+ If the target structure option is selected instead, the user must provide an input structure, which can be either 
+ a `SchrodingerAtomStruct` or a standard `AtomStruct`. The available output formats in this case are limited to Maestro 
+ (`.maegz`) and PDB (`.pdb`). After conversion, the resulting structure is returned as a single output object labeled 
+ `outputStructure`.
+
+ The protocol is optimized for efficiency and allows for parallel execution, making it suitable for handling
+ multiple molecules concurrently.
+
+ Internally, the protocol relies on the `structconvert` utility included with the Schrodinger suite to carry out the 
+ format transformations. File naming and storage are managed automatically, with outputs saved to the appropriate 
+ paths within the Scipion project structure. If required, the protocol also adds metadata or performs minor adjustments 
+ to ensure compatibility with downstream applications.
+
+ Overall, this protocol provides a convenient and robust way to prepare molecular data in the format required for 
+ subsequent analysis, modeling, or visualization steps within a cheminformatics or structural biology workflow."""
+
     _label = 'convert'
 
     saving = False
@@ -81,14 +110,14 @@ class ProtSchrodingerConvert(EMProtocol):
         if self.inputType.get() == SMALLMOL:
             self.outputSmallMolecules = SetOfSmallMolecules().create(outputPath=self._getPath(), suffix='SmallMols')
             for mol in self.inputSmallMolecules.get():
-                cStep = self._insertFunctionStep('convertMolStep', mol.clone(), prerequisites=[])
+                cStep = self._insertFunctionStep(self.convertMolStep, mol.clone(), prerequisites=[])
                 convSteps.append(cStep)
 
         elif self.inputType.get() == TARGET:
-            cStep = self._insertFunctionStep('convertTargetStep', prerequisites=[])
+            cStep = self._insertFunctionStep(self.convertTargetStep, prerequisites=[])
             convSteps.append(cStep)
 
-        self._insertFunctionStep('createOutputStep', prerequisites=convSteps)
+        self._insertFunctionStep(self.createOutputStep, prerequisites=convSteps)
 
     def convertMolStep(self, mol):
         progStructConvert=Plugin.getHome('utilities/structconvert')

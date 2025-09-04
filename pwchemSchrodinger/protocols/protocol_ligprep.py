@@ -49,6 +49,33 @@ OUTPUTATTRIBUTEDROPPED = "outputSmallMoleculesDropped"
 
 class ProtSchrodingerLigPrep(EMProtocol):
     """Schrodinger's LigPrep is a program to prepare ligand libraries
+
+    User documentation(AI GENERATED):
+    The Ligand Preparation (LigPrep) protocol in Schrodinger is designed to prepare small molecules for docking simulations.
+    This process involves several key steps, including ionization, stereoisomer generation, and force field optimization.
+    The protocol takes as input a set of small molecules and prepares them by performing necessary transformations and optimizations
+    to ensure that they are suitable for use in molecular docking or other simulations.
+    The first step involves defining the parameters for ionization. The user can choose from several ionization methods, such as neutralization,
+    Epik ionization (which is recommended), or no ionization. The pH value and pH range can also be specified, with default values typically used
+    for standard conditions. If Epik ionization is selected, users have the option to enable metal binding, which is important for simulating interactions
+    with metal ions in protein binding pockets.
+
+    Another key feature of this protocol is the stereoisomer generation. The user can choose whether to respect the chirality of the input molecule or to generate all
+    possible stereoisomers for the chiral centers in the molecule. If stereoisomers are not generated, the protocol respects the existing chirality in the input molecule.
+    The user can also specify the number of isomers to generate if chirality is not respected.
+
+    For optimization, the protocol offers different force fields to choose from. The user can select between no optimization, the OPLS 2005 force field, or the recommended OPLS3e
+    force field, which is used for final optimization to ensure that the ligand is in its lowest energy conformation.
+    Once the parameters are defined, the LigPrep protocol prepares the input molecules by applying these settings. For each molecule, the preparation process involves checking
+    if the molecule has already been processed. If not, the ligand is ionized (if applicable), stereoisomers are generated, and the molecule is optimized using the chosen force field.
+    The molecules are then converted into a compatible structure format, such as .sdf, and saved for further analysis.
+
+    The prepared molecules are saved into two categories: the molecules that were successfully prepared and those that were dropped during the process.
+    If molecules are successfully prepared, they are saved in the output set, ready for further analysis or docking. The output also includes a summary of the ligand preparation steps,
+    allowing users to review the parameters used during the process. If any molecules fail during preparation, they are saved separately, and the user can review why they were dropped.
+    In summary, the LigPrep protocol is a comprehensive tool for preparing small molecules for docking simulations, ensuring that they are in an appropriate form for accurate and reliable
+    docking results. The ability to customize ionization, stereoisomer generation, and optimization parameters makes it a powerful tool for a variety of molecular modeling tasks in drug
+    discovery.
     """
 
     _label = 'ligand preparation (ligprep)'

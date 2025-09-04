@@ -35,7 +35,28 @@ from ..objects import SchrodingerAtomStruct
 progPrime = Plugin.getHome('prime')
 
 class ProtSchrodingerPrime(EMProtocol):
-    """Schrodinger's prime is a structure prediction program """
+    """Schrodinger's prime is a structure prediction program 
+
+    User Documentation(AI GENERATED)
+    The ProtSchrodingerPrime class is designed to interact with Schrodinger's Prime program, which is a tool for structure prediction. 
+    The class provides a protocol for performing various operations such as side chain prediction, minimization of hydrogens, and loop prediction, which are essential for 
+    refining and optimizing protein structures before further analysis or docking simulations.
+
+    The protocol starts by allowing the user to define an input atomic structure, which is the protein structure to be processed. 
+    The class includes an operation parameter that allows the user to choose between three main tasks: side chain prediction, minimization of all hydrogens, 
+    and loop prediction. For side chain prediction, the user specifies which residues are of interest, and for loop prediction, the user defines the starting and 
+    ending residues for the loop. Additionally, the user can adjust the radius of the residue sphere for loop prediction and set a minimum overlap parameter to refine the prediction.
+    The class generates a job input file that contains the appropriate settings based on the user's choices, including the type of operation (e.g., side chain prediction or loop prediction) 
+    and other related parameters. The job input file is then used to execute the Prime tool, and the results are saved to a .maegz file.
+    After the process is complete, the class generates an output file that contains the refined structure, which is then linked back to the input structure for traceability. 
+    This output file can be used for further simulations or analyses, such as molecular docking.
+    
+    The ProtSchrodingerPrime class is an important tool for protein structure refinement, as it automates the process of refining and predicting various aspects of the protein structure, 
+    such as side chains, hydrogens, and loops, using Schrodinger's Prime software. This class is particularly useful in structural biology and drug discovery, where accurate protein models are essential 
+    for understanding molecular interactions.
+    """
+
+
     _label = 'target fixing (prime)'
     _program = ""
 

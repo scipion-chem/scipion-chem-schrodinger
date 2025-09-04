@@ -38,7 +38,34 @@ from .. import Plugin
 from ..objects import SchrodingerAtomStruct
 
 class ProtSchrodingerPrepWizard(EMProtocol):
-    """Calls the preparation wizard"""
+    """Calls the preparation wizard
+
+
+    User Documentation(AI GENERATED)
+    The ProtSchrodingerPrepWizard class is used to prepare a target structure for molecular docking simulations using Schrodinger's PrepWizard tool. The preparation involves several stages, 
+    which clean and optimize the atomic structure of the receptor, handle protonation and tautomerization states, and set up the receptor for further processing. The class allows for both manual preparation 
+    through the Maestro GUI and automated preparation through the command-line interface, depending on the user’s choice.
+    The preparation process is divided into multiple stages. The first stage, Stage 1, deals with cleaning and modifying the atomic structure of the receptor. 
+    This includes filling missing side chains and loops, creating disulfide bonds, handling hydrogens, and dealing with glycosylation or palmitoylation. It also provides options for retaining 
+    distant waters and treating metals.
+
+    Stage 2 focuses on protonation, using the Protassign tool to adjust the protonation states of the receptor at a specified pH. 
+    This stage can also sample waters and apply crystal symmetry, along with minimizing adjustable hydrogens.
+    Stage 3 involves restrained minimization using the Impref tool, applying an RMSD cutoff and deciding whether to fix heavy atoms or minimize only hydrogens. 
+    It also lets the user choose between different OPLS force fields.
+    Stage 4 handles ionization and tautomerization using the Epik tool. This stage adjusts the protonation states based on pH and pH range and can apply a maximum number of states constrain 
+    to model multiple protonation states.
+
+    Users can choose to perform the preparation manually using the Maestro GUI or automate the entire process through this class. When manual preparation is selected, 
+    the class provides a link to a tutorial for guidance. In the automated version, the relevant steps are executed in sequence, with each stage being triggered based on user settings.
+    At the end of the process, the class generates and outputs a prepared receptor structure, either as a .maegz file or a PDB file, ready for further docking simulations. 
+    The output is linked back to the input structure for traceability.
+    
+    In terms of validation, the class ensures that the PDB file is cleaned correctly from waters and ligands when required, and the receptor's chain structure is preserved based on 
+    the user’s input. The class also provides options for handling problematic residues, ensuring that the preparation process is thorough and consistent.
+    This protocol is essential in setting up receptors for molecular docking by ensuring that the structures are properly prepared, including adjusting protonation states, 
+    handling hydrogens, and ensuring that the receptor's overall structure is optimized for simulations.
+    """
     _label = 'target preparation (prepwizard)'
     _program = ""
 

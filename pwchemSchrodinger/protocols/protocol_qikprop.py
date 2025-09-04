@@ -45,7 +45,36 @@ from .. import Plugin
 OUTPUTATTRIBUTE = "outputSmallMolecules"
 
 class ProtSchrodingerQikprop(EMProtocol):
-	""" Qikprop analyzes the properties of a given set of small molecules. """
+	""" Qikprop analyzes the properties of a given set of small molecules. 
+
+	User Documentation(AI GENERATED)
+	The ProtSchrodingerQikprop class is designed to facilitate the analysis of small molecules using Schrodinger's Qikprop tool. Qikprop is used to predict various molecular properties such as lipophilicity, 
+	solubility, molecular weight, and other essential characteristics of molecules. The protocol allows users to input a set of small molecules and generate predictions about these properties. 
+	Additionally, it can also generate a list of similar known drugs based on the properties of each molecule in the input set.
+	This class offers several parameters that control how the Qikprop analysis is performed. Users can choose to run Qikprop in a faster mode by excluding certain calculations like dipole, 
+	HOMO, and LUMO, or they can opt for a more comprehensive analysis. The fast parameter enables the fast mode, while the sim parameter allows the generation of a list of known drugs that 
+	are similar to each processed molecule. Users can also specify how many similar drugs they want to report with the nsim parameter. The class includes advanced options, such as neutralizing 
+	molecules before processing or using an alternative probe radius for SASA and PSA calculations.
+
+	The execution of the protocol is parallelized, enabling efficient processing of multiple molecules at once. The process involves several steps: first, it runs Qikprop for each molecule in the 
+	input set, applying the appropriate parameters. Then, if the cleanTmps parameter is selected, it cleans up any temporary files generated during execution. Finally, the results are processed, 
+	and the properties calculated by Qikprop are added to each molecule in the output set. This output set contains the molecules with their newly calculated properties, ready for further analysis or use.
+	Before running the protocol, the system performs several validation checks to ensure the correct parameters are set. For example, it checks that MPI is not selected (as only threads are supported), 
+	ensures that if an alternative probe is used, its value is valid, and verifies that the input set contains at least one molecule. These checks prevent errors during execution and ensure that the protocol 
+	runs smoothly.
+
+	Once the Qikprop analysis is completed, the calculated properties are saved in a CSV file. This file is parsed, and the properties are added as attributes to each molecule in the output set. 
+	The addCSVProperties method reads the CSV file, assigns the corresponding values to the molecules, and ensures that the properties are correctly stored. This detailed process allows users to analyze and 
+	compare the properties of their small molecules with ease.
+	
+	The class also includes utility functions that assist in the execution of the protocol. The getQikpropBaseCmd method constructs the command string needed to run Qikprop, incorporating various 
+	flags based on user input. The cleanTmpFiles function handles the deletion of temporary files, and the getCSVTextValue method ensures that the values read from the CSV file are correctly interpreted as 
+	integers, floats, or strings. These utilities help streamline the execution of the protocol and improve its efficiency.
+	In summary, the ProtSchrodingerQikprop class provides a comprehensive solution for analyzing the properties of small molecules. By running Qikprop and processing the results, users can gain valuable 
+	insights into the molecular characteristics of their compounds. With customizable parameters, parallel execution, and built-in validation and cleanup, this protocol is a powerful tool for researchers 
+	in drug discovery and molecular design.
+	"""
+
 	_label = 'qikprop'
 	_possibleOutputs = {OUTPUTATTRIBUTE: SetOfSmallMolecules}
 

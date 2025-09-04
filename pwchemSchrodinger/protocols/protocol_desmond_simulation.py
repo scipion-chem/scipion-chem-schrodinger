@@ -47,7 +47,47 @@ mergeScript = schrodinger_plugin.getHome('internal/bin/trj_merge.py')
 
 class ProtSchrodingerDesmondMD(EMProtocol):
     """Calls Desmond molecular dynamics for the preparation of the system via solvatation, the addition of ions
-    and a force field"""
+    and a force field
+
+    User Documentation(AI GENERATED):
+    This protocol uses Desmond software to perform molecular dynamics simulations, 
+    which help study the behavior of atomic systems under various conditions. 
+    At the start, the user needs to input the atomic structure of the system 
+    they want to simulate, such as a protein, ligand, or other molecular system. 
+    This structure is then prepared by adding water molecules and ions to simulate 
+    a more realistic environment, and a force field is applied to model how the 
+    molecules interact with each other.
+
+    The user can set key parameters, such as the simulation time (how long the 
+    simulation runs), the temperature (which controls the heat of the system), 
+    and the pressure (which models the surrounding environmental pressure). 
+    The protocol also lets the user specify which parts of the system should be 
+    fixed in place during the simulation, such as the protein or ligand, so they 
+    don't move unexpectedly.
+
+    There are several options for how the simulation is run, such as different 
+    ensemble types (NVE, NVT, or NPT), which define how temperature and pressure 
+    are controlled during the simulation. The user can also configure temperature 
+    control (thermostats) and pressure control (barostats) settings, which help 
+    maintain the system at the desired temperature and pressure throughout the simulation.
+
+    During the simulation, the protocol saves the trajectory data at regular intervals, 
+    which are essentially snapshots of the system’s state over time. This allows users 
+    to analyze how the system evolves during the simulation, providing insights into 
+    the molecular interactions and behavior.
+
+    The protocol also allows users to modify the simulation flow, adding or removing steps, 
+    and it generates a summary of the simulation setup. The simulation can either start 
+    from scratch or continue from a previous checkpoint, depending on the user’s needs.
+
+    In summary, this protocol automates the process of setting up, running, and managing 
+    molecular dynamics simulations using Desmond. It allows the user to specify the parameters 
+    for the simulation, such as the molecular system, time, temperature, and pressure, 
+    and it handles the simulation execution, saving data for later analysis. This is 
+    particularly useful in fields like drug design, where researchers need to understand 
+    how molecules behave in a simulated environment.
+    """
+
     _label = 'system molecular dynamics (desmond)'
 
     NONE, DESMOND_NPT = 0, 1
@@ -268,7 +308,8 @@ class ProtSchrodingerDesmondMD(EMProtocol):
     def _validate(self):
         errors = []
         if not self.workFlowSteps.get():
-            errors += ['You need to define some simulation. Try the default MD workflows in doubt.']
+            msjDic = createMSJDic(self)
+            errors += self.validateAnneal(msjDic)
         else:
             workSteps = self.workFlowSteps.get().split('\n')
             if '' in workSteps:

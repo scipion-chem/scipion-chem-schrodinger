@@ -59,7 +59,35 @@ AS, POCKET, GRID = 0, 1, 2
 COMPILE, GLIDE, IDOCK, PPREP, PFLEX, PENER, PHELIX, PLOOP, PMIN, PREF, PSIDE, SCORE, SORT, TRIM, VDW = list(range(15))
 
 class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
-  """Perform an Induced Fit Docking protocol using the user defined set of stages"""
+  """Perform an Induced Fit Docking protocol using the user defined set of stages
+  
+  User documentation(AI GENERATED):
+  The Induced Fit Docking (IFD) protocol in Schrodinger is designed to perform molecular docking simulations that consider the flexibility 
+  of both the ligand and the receptor. The process involves several stages where ligands are docked into a specific binding site, and the receptor 
+  structure is refined based on its interaction with the ligands. Additionally, the system can predict flexibility and optimize the receptor-ligand complex,
+  improving the accuracy of the simulation. The protocol allows for multiple stages of refinement and flexibility prediction, offering a detailed approach to docking 
+  that is useful for drug discovery.
+
+  The first step in using this protocol is to provide the necessary input data, which includes the receptor and ligand files. The receptor file contains the three-dimensional 
+  structure of the protein or molecule, while the ligand file contains the small molecules that will be docked into the receptor. These files must be in a compatible format, 
+  such as .mae, .pdb for the receptor, and .mol2 or .sdf for the ligands. Once these files are uploaded, the user can specify various parameters related to the docking process, 
+  including the choice of default steps for the molecular dynamics workflow.
+
+  In the protocol, several stages are performed to prepare the receptor and ligand for docking. One key stage is the compilation of residues, where the residues of the receptor 
+  that are likely to interact with the ligand are selected based on a cutoff distance. This stage allows for the refinement of the receptor structure to ensure proper binding interactions. 
+  Another stage involves the Glide docking process, where the ligands are docked to the receptor using Schrodinger’s Glide software. During this stage, you can select between different 
+  docking types, such as flexible or rigid docking, and set the precision for the docking simulation. The receptor preparation stage ensures that the receptor is ready for the docking process 
+  by performing energy minimization to optimize the receptor-ligand interaction.
+  
+  Further stages refine the receptor’s structure, such as the helix and loop refinement stages, which adjust the receptor’s conformations to better fit the ligand. 
+  Side-chain prediction and minimization stages optimize the receptor's side chains to further improve the fit of the ligand. The scoring and filtering steps assess the quality 
+  of the docked poses by assigning scores based on different criteria like docking score and ligand efficiency. This allows the user to filter and select the best poses for further analysis.
+  After the docking is completed, the protocol generates a summary of the steps, which includes the configurations used during the simulation, such as the ligand docking precision and the 
+  types of refinement applied. This summary provides an overview of the entire simulation process, ensuring the user is informed about the choices made during the docking process. 
+  Additionally, users can modify parameters and repeat stages to improve the results, such as refining poses or adjusting residue selections.
+  Finally, once the simulation is complete, the output files, including the docked poses and their respective scores, are provided for further analysis. 
+  These files can be used to evaluate the binding affinity of the ligands to the receptor and identify potential candidates for further experimental testing."""
+  
   _label = 'Induced Fit Docking (IFD)'
 
   stageTypes = {'Compile residues': 'COMPILE_RESIDUE_LIST',

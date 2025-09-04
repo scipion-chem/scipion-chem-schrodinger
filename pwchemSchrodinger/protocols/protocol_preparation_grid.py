@@ -43,7 +43,29 @@ from ..objects import SchrodingerGrid, SetOfSchrodingerGrids
 structConvertProg = schrodinger_plugin.getHome('utilities/structconvert')
 
 class ProtSchrodingerGrid(EMProtocol):
-    """Calls glide to prepare a grid manually or from a SetOfStructROIs"""
+    """Calls glide to prepare a grid manually or from a SetOfStructROIs
+
+    User Documentation(AI GENERATED):
+    The ProtSchrodingerGrid class is designed to define and prepare a grid used in molecular docking calculations with the Glide tool from Schrodinger. 
+    This grid is essential for evaluating the interactions between a receptor (protein) and a ligand, providing a three-dimensional space where the evaluations will take place.
+    The protocol allows the user to define the grid in two ways: manually, through the Maestro user interface, or automatically, using a set of pre-defined Structural Regions of Interest (ROIs).
+    These ROIs are used to center the grid around the protein, ensuring that the relevant area of the receptor is properly covered.
+    Once the grid parameters are defined, the necessary input files for Glide are generated, which are then processed to create the grid. This grid is later used in docking simulations 
+    to evaluate the interaction between the ligand and the receptor. The class also includes the ability to adjust various parameters related to the receptor, such as the scaling factor for van der Waals 
+    interactions and the use of partial charges from the receptor.
+
+    Within the general grid parameters, the Coulomb-van der Waals cutoff and the force field to be used can be configured, with options such as OPLS4 and OPLS2005. Additionally, 
+    receptor parameters allow the adjustment of the scaling factor for van der Waals interactions, the partial charge cutoff, and the inclusion of aromatic hydrogens and halogens as hydrogen bond 
+    donors or acceptors. These adjustments are important for more accurately reflecting non-covalent interactions between the receptor and the ligand.
+    Regarding the grid definition, the user can choose to set the dimensions of the inner and outer boxes manually or calculate them based on the diameter of the ROIs. 
+    The class allows the configuration of the size of these boxes, and the grid coordinates are adjusted based on these settings. Additionally, the class handles the preparation of input 
+    files and the execution of Glide to generate the grid.
+    
+    The protocol also includes a validation function to check for conflicts in the parameters, such as configuring halogens simultaneously as hydrogen bond donors and acceptors.
+    Furthermore, the output files generated during the process are organized and stored, making them easier to use in subsequent molecular docking simulations.
+    This protocol is useful for generating a precise grid around the regions of interest in a receptor, which is crucial for conducting molecular docking simulations and for predicting the affinity 
+    between ligands and proteins."""
+    
     _label = 'grid definition (glide)'
     _program = ""
 

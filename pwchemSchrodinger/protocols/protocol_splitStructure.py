@@ -35,7 +35,34 @@ from ..objects import SchrodingerAtomStruct
 from pwchem.objects import SmallMolecule
 
 class ProtSchrodingerSplitStructure(EMProtocol):
-    """Split a structure into different pieces"""
+    """Split a structure into different pieces
+    User Documentation(AI GHENERATED)
+    The ProtSchrodingerSplitStructure class is designed to split a structure into different components using Schrodinger's split_structure tool. 
+    This protocol provides a way to decompose a given protein-ligand complex or other molecular structure into individual pieces, such as chains, ligands, cofactors, ions, and waters. 
+    The resulting components can be further analyzed, visualized, or used for additional simulations or docking studies.
+    The class includes several parameters that control how the splitting process is performed. The splitMode parameter allows users to select the mode of splitting: by chain, by ligand, 
+    or by PDB. The splitMode=2 option splits the structure into receptor, individual ligands, non-metal ions, cofactors, and waters. Additionally, users can merge ligands or waters with 
+    the closest chain by enabling the mergeLigands and mergeWaters options. The protocol also provides an option to group waters in the structure and to split cofactors and metals into 
+    different structures using the splitAll parameter.
+
+    The class also supports the use of ASL (Atom Specification Language) to define which residues or groups should be considered as ligands, cofactors, or ions. Users can specify custom 
+    ASL expressions for ligands, cofactors, and ions through the ligandASL, cofactorASL, positiveASL, and negativeASL parameters. This allows for more flexibility and precision in how the structure is split.
+    The execution of the protocol is structured into a single main step, splitStep, which calls the Schrodinger split_structure.py script with the appropriate arguments based on the user-defined parameters. 
+    This step splits the input structure into the desired components, and the results are saved as separate files. After the splitting process, the protocol processes the output files and organizes them into
+      different categories, such as receptor, chain, ligand, cofactor, and ion components. Each output component is defined as a separate structure and linked back to the input structure for traceability.
+    The class also includes functionality for handling temporary files and ensuring that the split components are properly named and stored. The getNumber function is used to extract a unique identifier for 
+    each component based on its file name, ensuring that each output structure is correctly labeled. The output is then defined using the _defineOutputs method, and the source relation between the input structure 
+    and the output components is established using _defineSourceRelation.
+
+    In terms of validation, the class ensures that the input structure is valid and that the parameters are correctly configured. The splitStep method takes care of invoking the Schrodinger tool with the 
+    appropriate flags and arguments based on the user's choices. Once the splitting process is complete, the results are saved in the specified output directory, and the individual components are made available 
+    for further analysis or simulations.
+    The class also provides a summary method, _summary, which can be used to gather and report any relevant information or warnings generated during the execution of the protocol. However, in this case, the 
+    method simply returns an empty list.
+    
+    Overall, the ProtSchrodingerSplitStructure class is a versatile tool for splitting molecular structures into their components, making it easier to analyze individual parts of a complex structure. 
+    This can be especially useful in structural biology and drug discovery, where understanding the interactions between specific components, such as receptors, ligands, and cofactors, is crucial.
+    """
     _label = 'split structure'
     _program = ""
 
