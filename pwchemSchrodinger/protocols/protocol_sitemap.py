@@ -165,18 +165,17 @@ class ProtSchrodingerSiteMap(EMProtocol):
 
     def mergePDBFiles(self, pdbFiles, pdbOutFile):
         atomLines, hetatmLines = '', ''
-        idsDic = {}
+        pocketIds = []
         for pFile in pdbFiles:
             fileId = pFile.split('-')[-1].split('.')[0]
             with open(pFile) as fpdb:
                 for line in fpdb:
                     if line.startswith('TITLE') and '_site_' in line:
-                      numId = line.split('_site_')[1].strip()
-                      idsDic[fileId] = numId
+                      pocketIds.append(fileId)
                     elif line.startswith('ATOM'):
                       atomLines += line
                     elif line.startswith('HETATM'):
-                      newLine = self.formatPocketStrLine(line, numId)
+                      newLine = self.formatPocketStrLine(line, fileId)
                       hetatmLines += newLine
 
         with open(self._getPath(pdbOutFile), 'w') as f:
@@ -184,22 +183,24 @@ class ProtSchrodingerSiteMap(EMProtocol):
           f.write(hetatmLines)
           f.write('\nTER')
 
-        pdbFiles, proteinFile = self.renamePDBFiles(pdbFiles, idsDic)
+        pdbFiles, proteinFile = self.renamePDBFiles(pdbFiles, pocketIds)
         return pdbFiles, proteinFile
 
-    def renamePDBFiles(self, pdbFiles, idsDic):
+    def renamePDBFiles(self, pdbFiles, pocketIds):
         tmpFiles = []
         for pFile in pdbFiles:
             pFile = os.path.abspath(pFile)
             fileId = pFile.split('-')[-1].split('.')[0]
-            if fileId in idsDic:
-                tmpFile = pFile.replace('-{}.pdb'.format(fileId), '-{}tmp.pdb'.format(idsDic[fileId]))
+            print('File to id: ', pFile, fileId)
+            if fileId in pocketIds:
+                tmpFile = pFile.replace('-{}.pdb'.format(fileId), '-{}tmp.pdb'.format(fileId))
                 shutil.move(pFile, tmpFile)
                 tmpFiles.append(tmpFile)
             else:
                 proteinFile = pFile.replace('out-{}.pdb'.format(fileId), 'protein.pdb')
                 shutil.move(pFile, proteinFile)
 
+        print('tmpFiles: ', tmpFiles)
         finalPDBFiles = []
         for tmpFile in tmpFiles:
             finalPDBFiles.append(tmpFile.replace('tmp.pdb', '.pdb'))
