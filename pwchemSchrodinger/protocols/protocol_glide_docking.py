@@ -428,6 +428,7 @@ class ProtSchrodingerGlideDocking(ProtSchrodingerGrid):
         outputSet.setDocked(True)
         outputSet.proteinFile.set(self.getOriginalReceptorFile())
         outputSet.structFile = pwobj.String(fnStruct)
+        outputSet.updateMolClass()
         if len(outputSet) > 0:
             self._defineOutputs(outputSmallMolecules=outputSet)
         else:

@@ -56,6 +56,9 @@ class ProtGlideDockingViewer(SmallMoleculesViewer):
         visDic.update({'displayMaestroPocket': self._viewPocketMaestroDock})
         return visDic
 
+    def getViewerOptions(self):
+        return ['ChimeraX']
+
     def buildComplexDic(self, mols):
         '''Return a dic of the form: {receptorFile: [ligandFiles]}'''
         recDic = {}
