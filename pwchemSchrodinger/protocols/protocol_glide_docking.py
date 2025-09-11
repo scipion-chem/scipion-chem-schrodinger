@@ -23,7 +23,7 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-import os, shutil, threading, subprocess, time, glob
+import os, shutil, re, subprocess, time, glob
 
 from pyworkflow.protocol.constants import LEVEL_ADVANCED
 from pyworkflow.protocol.params import PointerParam, EnumParam, BooleanParam, FloatParam, IntParam, \
@@ -366,6 +366,11 @@ class ProtSchrodingerGlideDocking(ProtSchrodingerGrid):
         else:
             print('Failed to find grid {}'.format(gridId))
 
+    def getNOutputMaeStructures(self, outCsv):
+      with open(outCsv, 'r') as file:
+        lineCount = sum(1 for _ in file)
+      return lineCount
+
     def performOutputParsing(self, gridDirs, molLists, it, smallDict):
         allSmallList = []
         for gridDir in gridDirs:
@@ -374,7 +379,11 @@ class ProtSchrodingerGlideDocking(ProtSchrodingerGrid):
 
             smallList = []
             fnPv = self._getExtraPath(gridDir + 'job_{}_pv.maegz'.format(gridId))
-            with open(self._getExtraPath(gridDir + 'job_{}_pv.csv'.format(gridId))) as fhCsv:
+            fnCsv = self._getExtraPath(gridDir + f'job_{gridId}_pv.csv')
+            nStructs = self.getNOutputMaeStructures(fnCsv)
+            recFile, molFiles = self.divideMaeComplex(fnPv, nStructs)
+
+            with open(fnCsv) as fhCsv:
                 fhCsv.readline()
                 fhCsv.readline()
                 for i, line in enumerate(fhCsv.readlines()):
@@ -391,9 +400,8 @@ class ProtSchrodingerGlideDocking(ProtSchrodingerGrid):
                     small.setDockId(self.getObjId())
                     small.setGridId(gridId)
 
-                    _, posFile = self.divideMaeComplex(fnPv, posIdx=i+1)
                     small.setProteinFile(self.getInputMaeFile())
-                    small.setPoseFile(posFile)
+                    small.setPoseFile(molFiles[i])
                     small.setPoseId(i + 1)
 
                     smallList.append(small)
@@ -438,17 +446,46 @@ class ProtSchrodingerGlideDocking(ProtSchrodingerGrid):
         else:
             print('No output docking files were generated or no poses were found')
 
-    def divideMaeComplex(self, maeFile, posIdx=1, outDir=None):
+    def renameLigandFiles(self, ligFiles):
+      '''Rename the ligand files, removing the "0" padding and substracting 1 to the ID (do not account for receptor)
+      '''
+      newFiles = []
+      pattern = re.compile(r'^(.*?)-0*(\d+)(\..+)$')
+      oDir = os.path.dirname(ligFiles[0])
+      for filename in ligFiles:
+        fileBase = os.path.basename(filename)
+        match = pattern.match(fileBase)
+        if match:
+          prefix, numberStr, extension = match.groups()
+
+          newNumber = int(numberStr) - 1
+          newFilename = os.path.join(oDir, f"{prefix}-{newNumber}{extension}")
+          os.rename(filename, newFilename)
+          newFiles.append(newFilename)
+      return newFiles
+
+    def divideMaeComplex(self, maeFile, nStructs, outDir=None):
+      '''Divides the pv.maegz file into the receptor and ligand files'''
       if not outDir:
         outDir = os.path.dirname(maeFile)
-      molFile, recFile = os.path.join(outDir, getBaseName(maeFile) + f'_lig_{posIdx}.mae'), \
-                         os.path.join(outDir, getBaseName(maeFile) + '_rec.maegz')
-      args = f' -n 1 {os.path.abspath(maeFile)} {os.path.abspath(recFile)}'
-      subprocess.run(f'{structConvertProg} {args}', check=True, capture_output=True, text=True, shell=True, cwd=outDir)
-      args = f' -n {posIdx+1} {os.path.abspath(maeFile)} {os.path.abspath(molFile)}'
+      outDir = os.path.abspath(outDir)
+
+      outBaseName = os.path.join(outDir, getBaseName(maeFile) + f'_lig')
+      args = f'-split-nfiles {nStructs} {os.path.abspath(maeFile)} {outBaseName}.mae'
       subprocess.run(f'{structConvertProg} {args}', check=True, capture_output=True, text=True, shell=True, cwd=outDir)
 
-      return recFile, molFile
+
+      splitFiles = []
+      for file in os.listdir(outDir):
+        if os.path.basename(outBaseName) in file:
+          splitFiles.append(os.path.join(outDir, file))
+      splitFiles.sort()
+
+      recFile = outBaseName.replace('_lig', '_rec.mae')
+      os.rename(splitFiles[0], recFile)
+      molFiles = self.renameLigandFiles(splitFiles[1:])
+
+      return recFile, molFiles
 
     def _validate(self):
         errors = []
