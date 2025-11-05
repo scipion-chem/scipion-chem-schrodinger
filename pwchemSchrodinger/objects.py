@@ -40,11 +40,15 @@ class SchrodingerAtomStruct(data.AtomStruct):
     def getExtension(self):
         return os.path.splitext(self.getFileName())[1]
 
-    def convert2PDB(self, outPDB=None, cwd=None):
-        if not outPDB:
-            outPDB = os.path.abspath(self.getFileName().replace(self.getExtension(), '.pdb'))
-        command = '{} {} {}'.format(structConvertProg, os.path.abspath(self.getFileName()), outPDB)
+    def convert2(self, oFile=None, cwd=None, ext='.cif'):
+        if not oFile:
+            oFile = os.path.abspath(self.getFileName().replace(self.getExtension(), ext))
+        command = '{} {} {}'.format(structConvertProg, os.path.abspath(self.getFileName()), oFile)
         subprocess.check_call(command, shell=True, cwd=cwd)
+        return oFile
+
+    def convert2PDB(self, outPDB=None, cwd=None):
+        outPDB = self.convert2(outPDB, cwd, ext='.pdb')
         return outPDB
 
 
