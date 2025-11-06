@@ -44,8 +44,8 @@ class ProtSchrodingerSiteMap(EMProtocol):
         form.addSection(label='Input')
         form.addParam('inputAtomStruct', PointerParam, pointerClass="AtomStruct", label='Atomic Structure:',
                       help='Input protein structure where the binding sites will be predicted')
-        form.addParam('maxsites', IntParam, default=-1, label='Number of predicted sites:', expertLevel=LEVEL_ADVANCED,
-                      help='Maximum numbe rof binding sites to be predicted on the structure')
+        form.addParam('maxsites', IntParam, default=30, label='Number of predicted sites:', expertLevel=LEVEL_ADVANCED,
+                      help='Maximum number of binding sites to be predicted on the structure')
         form.addParam('jobName', StringParam, label='Job Name:', default='', expertLevel=LEVEL_ADVANCED)
 
 
@@ -72,8 +72,7 @@ class ProtSchrodingerSiteMap(EMProtocol):
 
         fnIn = os.path.abspath(self.getInputMaeFile())
         args = '-WAIT -prot %s -j %s -keepvolpts' % (fnIn, self.getJobName())
-        if self.maxsites.get() != -1:
-          args += f" -maxsites {self.maxsites.get()}"
+        args += f" -maxsites {self.maxsites.get()}"
 
         self.runJob(prog, args, cwd=self._getExtraPath())
 
