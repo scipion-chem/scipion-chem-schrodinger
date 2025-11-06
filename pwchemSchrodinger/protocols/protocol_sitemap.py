@@ -52,9 +52,9 @@ class ProtSchrodingerSiteMap(EMProtocol):
 
     # --------------------------- INSERT steps functions --------------------
     def _insertAllSteps(self):
-        self._insertFunctionStep('convertStep')
-        self._insertFunctionStep('sitemapStep')
-        self._insertFunctionStep('createOutput')
+        self._insertFunctionStep(self.convertStep)
+        self._insertFunctionStep(self.sitemapStep)
+        self._insertFunctionStep(self.createOutputStep)
 
     def convertStep(self):
       if not hasattr(self.inputAtomStruct.get(), '_maeFile'):
@@ -78,14 +78,19 @@ class ProtSchrodingerSiteMap(EMProtocol):
 
         self.runJob(prog, args, cwd=self._getExtraPath())
 
-    def createOutput(self):
+    def createOutputStep(self):
         fnBinding = self.getMaestroOutput()
         fnStructure = self.getInputMaeFile()
         fnLog = self.getOutputLogFile()
         if os.path.exists(fnBinding):
-            proteinFile, pocketFiles = self.createOutputCIFFile()
-            outPockets = SetOfStructROIs(filename=self._getPath('structROIs.sqlite'))
+            proteinFile, pocketFiles = self.createOutputStepCIFFile()
+
+            setFile = self._getPath('structROIs.sqlite')
+            if os.path.exists(setFile):
+                os.remove(setFile)
+            outPockets = SetOfStructROIs(filename=setFile)
             for oFile in pocketFiles:
+              print('oFile: ', oFile)
               pock = StructROI(oFile, proteinFile, fnLog, pClass='SiteMap')
               pock._maeFile = pwobj.String(fnStructure)
               outPockets.append(pock)
@@ -111,7 +116,7 @@ class ProtSchrodingerSiteMap(EMProtocol):
       else:
         return self._getInputName()
 
-    def createOutputCIFFile(self):
+    def createOutputStepCIFFile(self):
       jobName = self.getJobName()
       cifFiles = self.buildPocketFiles(jobName, outDir=self._getExtraPath())
       proteinFile = self._getExtraPath(jobName + '.cif')
