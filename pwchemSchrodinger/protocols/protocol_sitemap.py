@@ -23,8 +23,7 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-import os, shutil
-from subprocess import CalledProcessError
+import os, re
 
 from pyworkflow.protocol.constants import LEVEL_ADVANCED
 from pyworkflow.protocol.params import PointerParam, IntParam, StringParam
@@ -160,9 +159,19 @@ class ProtSchrodingerSiteMap(EMProtocol):
       for outFile in os.listdir(outDir):
         if cifName in outFile and '.pdb' in outFile:
           pdbFiles.append(os.path.join(outDir, outFile))
-      pdbFiles = natural_sort(pdbFiles)
+      pdbFiles = natural_sort(self.getCompactPockets(pdbFiles))
       return pdbFiles
 
+    def getCompactPockets(self, files):
+      best_files = {}
+      for f in files:
+        match = re.search(r"site_(\d+)_volpts", f)
+        if match:
+          site_id = match.group(1)
+          if site_id not in best_files or "compact" in f:
+            best_files[site_id] = f
+
+      return list(best_files.values())
 
     def getInputPath(self):
         return self.inputAtomStruct.get().getFileName()
