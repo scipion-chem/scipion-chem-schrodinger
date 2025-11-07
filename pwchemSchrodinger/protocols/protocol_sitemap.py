@@ -88,7 +88,6 @@ class ProtSchrodingerSiteMap(EMProtocol):
                 os.remove(setFile)
             outPockets = SetOfStructROIs(filename=setFile)
             for oFile in pocketFiles:
-              print('oFile: ', oFile)
               pock = StructROI(oFile, proteinFile, fnLog, pClass='SiteMap')
               pock._maeFile = pwobj.String(fnStructure)
               outPockets.append(pock)
