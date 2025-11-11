@@ -147,10 +147,7 @@ class ProtSchrodingerSiteMap(EMProtocol):
           fo.write(outStr)
         cifFiles.append(cifFile)
 
-      if len(cifFiles) > 1:
-        return cifFiles
-      else:
-        return cifFiles[0]
+      return cifFiles
 
     def searchOutPDBFiles(self, cifName, outDir):
       pdbFiles = []
