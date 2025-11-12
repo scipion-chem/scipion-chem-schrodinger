@@ -80,20 +80,23 @@ class ProtSchrodingerSiteMap(EMProtocol):
         fnBinding = self.getMaestroOutput()
         fnStructure = self.getInputMaeFile()
         fnLog = self.getOutputLogFile()
+
+        setFile = self._getPath('structROIs.sqlite')
+        if os.path.exists(setFile):
+          os.remove(setFile)
+        outPockets = SetOfStructROIs(filename=setFile)
+
         if os.path.exists(fnBinding):
             proteinFile, pocketFiles = self.createOutputStepCIFFile()
 
-            setFile = self._getPath('structROIs.sqlite')
-            if os.path.exists(setFile):
-                os.remove(setFile)
-            outPockets = SetOfStructROIs(filename=setFile)
             for oFile in pocketFiles:
               pock = StructROI(oFile, proteinFile, fnLog, pClass='SiteMap')
               pock._maeFile = pwobj.String(fnStructure)
               outPockets.append(pock)
 
             outPockets.buildPDBhetatmFile()
-            self._defineOutputs(outputStructROIs=outPockets)
+
+        self._defineOutputs(outputStructROIs=outPockets)
 
     def _citations(self):
         return
@@ -136,11 +139,16 @@ class ProtSchrodingerSiteMap(EMProtocol):
         
         with open(pFile) as f:
           for i, line in enumerate(f):
-            sline = line.split()
-            coords = [float(c) for c in sline[5:8]]
-            if coords:
-              replacements = [str(i + 1), f'C{i + 1}', 'STP', 'C', 1, pocketK+1, *coords]
-              outStr += writeCIFLine(*replacements)
+            if line.startswith('HETATM'):
+              sline = line.split()
+              idx = (5, 8)
+              if len(sline) < 11:
+                sline = splitPDBLine(line)
+                idx = (6, 9)
+              coords = [float(c) for c in sline[idx[0]:idx[1]]]
+              if coords:
+                replacements = [str(i + 1), f'C{i + 1}', 'STP', 'C', 1, pocketK+1, *coords]
+                outStr += writeCIFLine(*replacements)
         
         cifFile = pFile.replace('.pdb', '.cif')
         with open(cifFile, 'w') as fo:
