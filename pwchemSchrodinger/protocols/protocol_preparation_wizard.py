@@ -291,7 +291,7 @@ class ProtSchrodingerPrepWizard(EMProtocol):
             schAS.setFileName(fnMae)
 
             pdbFile = schAS.convert2PDB(cwd=self._getPath())
-            pdbAS = AtomStruct(filename=pdbFile)
+            pdbAS = AtomStruct(filename=os.path.relpath(pdbFile))
             pdbAS._maeFile = String(fnMae)
 
             self._defineOutputs(outputStructure=pdbAS)
