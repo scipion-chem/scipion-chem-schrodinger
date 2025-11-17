@@ -59,7 +59,7 @@ class ProtSchrodingerSiteMap(EMProtocol):
       if not hasattr(self.inputAtomStruct.get(), '_maeFile'):
           inFile = self.inputAtomStruct.get().getFileName()
           cifFile = self._getCifFile()
-          cifFromASFile(inFile, cifFile, AS=self.inputAtomStruct.get())
+          cifFromASFile(inFile, cifFile, atomStruct=self.inputAtomStruct.get())
 
           maeFile = self.getInputMaeFile()
           prog = Plugin.getHome('utilities/prepwizard')
