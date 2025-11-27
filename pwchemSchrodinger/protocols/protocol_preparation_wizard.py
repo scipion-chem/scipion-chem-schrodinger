@@ -24,7 +24,6 @@
 # *
 # **************************************************************************
 import os, json
-from pwchem.utils import cleanPDB
 
 from pyworkflow.protocol.params import PointerParam, StringParam, BooleanParam, FloatParam, \
   IntParam, EnumParam, LabelParam
@@ -34,8 +33,11 @@ from pyworkflow.object import String
 from pwem.protocols import EMProtocol
 from pwem.objects.data import AtomStruct
 from pwem.convert.atom_struct import AtomicStructHandler
+
+from pwchem.utils import cleanPDB, getBaseName
+
 from .. import Plugin
-from ..objects import SchrodingerAtomStruct
+from ..utils import mae2cif
 
 class ProtSchrodingerPrepWizard(EMProtocol):
     """Calls the preparation wizard"""
@@ -277,25 +279,28 @@ class ProtSchrodingerPrepWizard(EMProtocol):
         if len(files) > 0:
             files.sort(key=os.path.getmtime)
             filesSorted = sorted(files, key=os.path.getmtime)
+            fnMae = filesSorted[-1]
 
-            maeFile = SchrodingerAtomStruct()
-            maeFile.setFileName(filesSorted[-1])
+            cifFile = self._getPath(getBaseName(fnMae) + '.cif')
+            cifFile = mae2cif(fnMae, cifFile, self._getPath())
 
-            self._defineOutputs(outputStructure=maeFile)
-            self._defineSourceRelation(self.inputAtomStruct, maeFile)
+            cifAS = AtomStruct(filename=os.path.relpath(cifFile))
+            cifAS._maeFile = String(fnMae)
+
+            self._defineOutputs(outputStructure=cifAS)
+            self._defineSourceRelation(self.inputAtomStruct, cifAS)
 
     def createOutput(self):
         fnMae = self._getPath(self.getJobName() + '.maegz')
         if os.path.exists(fnMae):
-            schAS = SchrodingerAtomStruct()
-            schAS.setFileName(fnMae)
+            cifFile = self._getPath(getBaseName(fnMae) + '.cif')
+            cifFile = mae2cif(fnMae, cifFile, self._getPath())
 
-            pdbFile = schAS.convert2PDB(cwd=self._getPath())
-            pdbAS = AtomStruct(filename=os.path.relpath(pdbFile))
-            pdbAS._maeFile = String(fnMae)
+            cifAS = AtomStruct(filename=os.path.relpath(cifFile))
+            cifAS._maeFile = String(fnMae)
 
-            self._defineOutputs(outputStructure=pdbAS)
-            self._defineSourceRelation(self.inputAtomStruct, pdbAS)
+            self._defineOutputs(outputStructure=cifAS)
+            self._defineSourceRelation(self.inputAtomStruct, cifAS)
 
     def getJobName(self):
       return self.inputAtomStruct.get().getFileName().split('/')[-1].split('.')[0]

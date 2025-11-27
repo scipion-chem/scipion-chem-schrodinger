@@ -23,14 +23,12 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-import os, re, subprocess
-from Bio.PDB.MMCIF2Dict import MMCIF2Dict
+import os, re
 
 from pyworkflow.protocol.constants import LEVEL_ADVANCED
 from pyworkflow.protocol.params import PointerParam, IntParam, StringParam
 import pyworkflow.object as pwobj
 from pwem.protocols import EMProtocol
-from .. import Plugin
 
 from pwchem.constants import CIF_DEF_HEADER, CIF_DEF_COLS
 from pwchem.objects import SetOfStructROIs, StructROI
@@ -38,6 +36,7 @@ from pwchem.utils import writePDBLine, splitPDBLine, cifFromASFile, getBaseName,
   addCifCols, filterCifCols, writeCifBlocks
 
 from pwchemSchrodinger import Plugin as schrodingerPlugin
+from pwchemSchrodinger.utils import mae2cif
 
 structConvertProg = schrodingerPlugin.getHome('utilities/structconvert')
 
@@ -69,16 +68,16 @@ class ProtSchrodingerSiteMap(EMProtocol):
           cifFromASFile(inFile, cifFile, atomStruct=inAs)
 
           maeFile = self.getInputMaeFile()
-          prog = Plugin.getHome('utilities/prepwizard')
+          prog = schrodingerPlugin.getHome('utilities/prepwizard')
           args = ' -WAIT -noprotassign -noimpref -noepik {} {}'.\
             format(os.path.abspath(cifFile), os.path.abspath(maeFile))
           self.runJob(prog, args, cwd=self._getExtraPath())
       else:
         maeFile = inAs._maeFile.get()
-        self.mae2cif(maeFile, self._getCifFile())
+        mae2cif(maeFile, self._getCifFile())
 
     def sitemapStep(self):
-        prog=Plugin.getHome('sitemap')
+        prog=schrodingerPlugin.getHome('sitemap')
 
         fnIn = os.path.abspath(self.getInputMaeFile())
         args = '-WAIT -prot %s -j %s -keepvolpts' % (fnIn, self.getJobName())
@@ -198,22 +197,7 @@ class ProtSchrodingerSiteMap(EMProtocol):
     def _getInputName(self):
         return getBaseName(self.getInputPath())
 
-    def mae2cif(self, maeFile, cifFile):
-      command = '{} {} {} -PDBx'.format(structConvertProg, os.path.abspath(maeFile), os.path.abspath(cifFile))
-      subprocess.check_call(command, shell=True, cwd=self._getExtraPath())
 
-      cifDic = MMCIF2Dict(cifFile)
-      cifDic = filterCifCols(cifDic, CIF_DEF_COLS)
-      cifDic = addCifCols(cifDic, '_atom_site.occupancy', 1)
-      cifDic = addCifCols(cifDic, '_atom_site.B_iso_or_equiv', 1)
-      cifDic = addCifCols(cifDic, '_atom_site.group_PDB', 'ATOM', 0)
-      cifDic = addCifCols(cifDic, '_atom_site.pdbx_PDB_model_num', 1)
-      cifDic = addCifCols(cifDic, '_atom_site.auth_seq_id', '_atom_site.label_seq_id', copyValues=True, position=13)
-
-      with open(cifFile, 'w') as f:
-        f.write(writeCifBlocks(cifDic) + '#\n')
-
-      return cifFile
 
 
 
