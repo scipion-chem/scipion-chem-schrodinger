@@ -23,7 +23,8 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-import os, re
+import os, re, subprocess
+from Bio.PDB.MMCIF2Dict import MMCIF2Dict
 
 from pyworkflow.protocol.constants import LEVEL_ADVANCED
 from pyworkflow.protocol.params import PointerParam, IntParam, StringParam
@@ -33,7 +34,12 @@ from .. import Plugin
 
 from pwchem.constants import CIF_DEF_HEADER, CIF_DEF_COLS
 from pwchem.objects import SetOfStructROIs, StructROI
-from pwchem.utils import writePDBLine, splitPDBLine, cifFromASFile, getBaseName, natural_sort, writeCIFLine
+from pwchem.utils import writePDBLine, splitPDBLine, cifFromASFile, getBaseName, natural_sort, writeCIFLine, \
+  addCifCols, filterCifCols, writeCifBlocks
+
+from pwchemSchrodinger import Plugin as schrodingerPlugin
+
+structConvertProg = schrodingerPlugin.getHome('utilities/structconvert')
 
 class ProtSchrodingerSiteMap(EMProtocol):
     """Calls sitemap to predict possible binding sites"""
@@ -56,16 +62,20 @@ class ProtSchrodingerSiteMap(EMProtocol):
         self._insertFunctionStep(self.createOutputStep)
 
     def convertStep(self):
-      if not hasattr(self.inputAtomStruct.get(), '_maeFile'):
-          inFile = self.inputAtomStruct.get().getFileName()
+      inAs = self.inputAtomStruct.get()
+      if not hasattr(inAs, '_maeFile'):
+          inFile = inAs.getFileName()
           cifFile = self._getCifFile()
-          cifFromASFile(inFile, cifFile, atomStruct=self.inputAtomStruct.get())
+          cifFromASFile(inFile, cifFile, atomStruct=inAs)
 
           maeFile = self.getInputMaeFile()
           prog = Plugin.getHome('utilities/prepwizard')
           args = ' -WAIT -noprotassign -noimpref -noepik {} {}'.\
             format(os.path.abspath(cifFile), os.path.abspath(maeFile))
           self.runJob(prog, args, cwd=self._getExtraPath())
+      else:
+        maeFile = inAs._maeFile.get()
+        self.mae2cif(maeFile, self._getCifFile())
 
     def sitemapStep(self):
         prog=Plugin.getHome('sitemap')
@@ -166,15 +176,15 @@ class ProtSchrodingerSiteMap(EMProtocol):
       return pdbFiles
 
     def getCompactPockets(self, files):
-      best_files = {}
+      bestFiles = {}
       for f in files:
         match = re.search(r"site_(\d+)_volpts", f)
         if match:
-          site_id = match.group(1)
-          if site_id not in best_files or "compact" in f:
-            best_files[site_id] = f
+          siteId = match.group(1)
+          if siteId not in bestFiles or "compact" in f:
+            bestFiles[siteId] = f
 
-      return list(best_files.values())
+      return list(bestFiles.values())
 
     def getInputPath(self):
         return self.inputAtomStruct.get().getFileName()
@@ -187,6 +197,23 @@ class ProtSchrodingerSiteMap(EMProtocol):
 
     def _getInputName(self):
         return getBaseName(self.getInputPath())
+
+    def mae2cif(self, maeFile, cifFile):
+      command = '{} {} {} -PDBx'.format(structConvertProg, os.path.abspath(maeFile), os.path.abspath(cifFile))
+      subprocess.check_call(command, shell=True, cwd=self._getExtraPath())
+
+      cifDic = MMCIF2Dict(cifFile)
+      cifDic = filterCifCols(cifDic, CIF_DEF_COLS)
+      cifDic = addCifCols(cifDic, '_atom_site.occupancy', 1)
+      cifDic = addCifCols(cifDic, '_atom_site.B_iso_or_equiv', 1)
+      cifDic = addCifCols(cifDic, '_atom_site.group_PDB', 'ATOM', 0)
+      cifDic = addCifCols(cifDic, '_atom_site.pdbx_PDB_model_num', 1)
+      cifDic = addCifCols(cifDic, '_atom_site.auth_seq_id', '_atom_site.label_seq_id', copyValues=True, position=13)
+
+      with open(cifFile, 'w') as f:
+        f.write(writeCifBlocks(cifDic) + '#\n')
+
+      return cifFile
 
 
 
