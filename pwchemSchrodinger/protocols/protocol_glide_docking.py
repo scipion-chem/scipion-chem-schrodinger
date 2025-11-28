@@ -290,12 +290,9 @@ class ProtSchrodingerGlideDocking(ProtSchrodingerGrid):
     def gridStep(self, pocket):
         if self.fromPockets.get() == 0:
             inAS = self.inputAtomStruct.get()
-            pdbFile = inAS.getFileName()
-            if not pdbFile.endswith('.pdb'):
-                pdbFile = inAS.convert2PDB(self._getExtraPath('inputStructure.pdb'))
-
+            asFile = inAS.getFileName()
             pocket = self.radius.get()
-            _, x, y, z = calculate_centerMass(pdbFile)
+            _, x, y, z = calculate_centerMass(asFile)
             pId = 1
         else:
             x, y, z = pocket.calculateMassCenter()

@@ -25,12 +25,11 @@
 
 import os, re, subprocess
 import pwem.objects.data as data
-from pwchem.objects import StructROI
 from pwchem.constants import FUNCTION_BOUNDING_BOX, PML_BBOX_STR_EACH, PML_BBOX_STR
 from pyworkflow.object import (Float, Integer, List, String)
-from . import Plugin as schrodinger_plugin
+from . import Plugin as schrodingerPlugin
 
-structConvertProg = schrodinger_plugin.getHome('utilities/structconvert')
+structConvertProg = schrodingerPlugin.getHome('utilities/structconvert')
 
 class SchrodingerAtomStruct(data.AtomStruct):
     """An AtomStruct in the file format of Maestro"""
@@ -40,11 +39,18 @@ class SchrodingerAtomStruct(data.AtomStruct):
     def getExtension(self):
         return os.path.splitext(self.getFileName())[1]
 
-    def convert2PDB(self, outPDB=None, cwd=None):
-        if not outPDB:
-            outPDB = os.path.abspath(self.getFileName().replace(self.getExtension(), '.pdb'))
-        command = '{} {} {}'.format(structConvertProg, os.path.abspath(self.getFileName()), outPDB)
+    def convert2(self, oFile=None, cwd=None, ext='.cif'):
+        if not oFile:
+            oFile = os.path.abspath(self.getFileName().replace(self.getExtension(), ext))
+        command = '{} {} {}'.format(structConvertProg, os.path.abspath(self.getFileName()), oFile)
+        if oFile.endswith('.cif'):
+            command += ' -PDBx'
+
         subprocess.check_call(command, shell=True, cwd=cwd)
+        return oFile
+
+    def convert2PDB(self, outPDB=None, cwd=None):
+        outPDB = self.convert2(outPDB, cwd, ext='.pdb')
         return outPDB
 
 

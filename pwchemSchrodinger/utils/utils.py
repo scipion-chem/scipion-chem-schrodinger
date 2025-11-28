@@ -27,6 +27,7 @@
 import numpy as np
 import os, subprocess, time, random
 from subprocess import check_call
+from Bio.PDB.MMCIF2Dict import MMCIF2Dict
 
 # Scipion em imports
 from pyworkflow.utils.path import moveFile
@@ -34,7 +35,8 @@ import pyworkflow.object as pwobj
 
 # Scipion chem imports
 from pwchem.objects import SmallMolecule
-from pwchem.utils import relabelAtomsMol2, runInParallel, getBaseName
+from pwchem.utils import relabelAtomsMol2, runInParallel, getBaseName, filterCifCols, addCifCols, writeCifBlocks
+from pwchem.constants import CIF_DEF_COLS
 
 
 # Plugin imports
@@ -208,6 +210,26 @@ def convertReceptor2PDB(maeFile, outPDB=None, cwd=None):
     command = '{} {} {}'.format(structConvertProg, os.path.abspath(maeFile), outPDB)
     subprocess.check_call(command, shell=True, cwd=cwd)
     return outPDB
+
+def mae2cif(maeFile, cifFile, cwd=None):
+    if cwd is None:
+        cwd = os.path.dirname(cifFile)
+
+    command = '{} {} {} -PDBx'.format(structConvertProg, os.path.abspath(maeFile), os.path.abspath(cifFile))
+    subprocess.check_call(command, shell=True, cwd=cwd)
+
+    cifDic = MMCIF2Dict(cifFile)
+    cifDic = filterCifCols(cifDic, CIF_DEF_COLS)
+    cifDic = addCifCols(cifDic, '_atom_site.occupancy', 1)
+    cifDic = addCifCols(cifDic, '_atom_site.B_iso_or_equiv', 1)
+    cifDic = addCifCols(cifDic, '_atom_site.group_PDB', 'ATOM', 0)
+    cifDic = addCifCols(cifDic, '_atom_site.pdbx_PDB_model_num', 1)
+    cifDic = addCifCols(cifDic, '_atom_site.auth_seq_id', '_atom_site.label_seq_id', copyValues=True, position=13)
+
+    with open(cifFile, 'w') as f:
+        f.write(writeCifBlocks(cifDic) + '#\n')
+
+    return cifFile
 
 # ----------------------- Protocol utils -----------------------
 def saveMolecule(protocols, molFn, molSet, oriMol):

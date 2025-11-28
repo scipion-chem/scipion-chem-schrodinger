@@ -23,19 +23,22 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-import os, shutil
-from subprocess import CalledProcessError
+import os, re
 
 from pyworkflow.protocol.constants import LEVEL_ADVANCED
 from pyworkflow.protocol.params import PointerParam, IntParam, StringParam
 import pyworkflow.object as pwobj
 from pwem.protocols import EMProtocol
-from .. import Plugin
 
-from pwchem import Plugin as pwchemPlugin
+from pwchem.constants import CIF_DEF_HEADER, CIF_DEF_COLS
 from pwchem.objects import SetOfStructROIs, StructROI
-from pwchem.utils import writePDBLine, splitPDBLine
-from pwchem.constants import OPENBABEL_DIC
+from pwchem.utils import writePDBLine, splitPDBLine, cifFromASFile, getBaseName, natural_sort, writeCIFLine, \
+  addCifCols, filterCifCols, writeCifBlocks
+
+from pwchemSchrodinger import Plugin as schrodingerPlugin
+from pwchemSchrodinger.utils import mae2cif
+
+structConvertProg = schrodingerPlugin.getHome('utilities/structconvert')
 
 class ProtSchrodingerSiteMap(EMProtocol):
     """Calls sitemap to predict possible binding sites"""
@@ -44,61 +47,65 @@ class ProtSchrodingerSiteMap(EMProtocol):
 
     def _defineParams(self, form):
         form.addSection(label='Input')
-        form.addParam('inputStructure', PointerParam, pointerClass="AtomStruct", label='Atomic Structure:',
+        form.addParam('inputAtomStruct', PointerParam, pointerClass="AtomStruct", label='Atomic Structure:',
                       help='Input protein structure where the binding sites will be predicted')
-        form.addParam('maxsites', IntParam, default=5, label='Number of predicted sites:',
-                      help='Maximum numbe rof binding sites to be predicted on the structure')
+        form.addParam('maxsites', IntParam, default=30, label='Number of predicted sites:', expertLevel=LEVEL_ADVANCED,
+                      help='Maximum number of binding sites to be predicted on the structure')
         form.addParam('jobName', StringParam, label='Job Name:', default='', expertLevel=LEVEL_ADVANCED)
 
 
     # --------------------------- INSERT steps functions --------------------
     def _insertAllSteps(self):
-        self._insertFunctionStep('convertStep')
-        self._insertFunctionStep('sitemapStep')
-        self._insertFunctionStep('createOutput')
+        self._insertFunctionStep(self.convertStep)
+        self._insertFunctionStep(self.sitemapStep)
+        self._insertFunctionStep(self.createOutputStep)
 
     def convertStep(self):
-      if not hasattr(self.inputStructure.get(), '_maeFile'):
-          inFile = self.inputStructure.get().getFileName()
-          if inFile.endswith('.pdbqt'):
-              outName, outDir = os.path.splitext(os.path.basename(inFile))[0], os.path.abspath(self._getTmpPath())
-              args = ' -i "{}" -of pdb --outputDir "{}" --outputName {}'.format(os.path.abspath(inFile),
-                                                                             os.path.abspath(outDir), outName)
-              pwchemPlugin.runScript(self, 'obabel_IO.py', args, env=OPENBABEL_DIC, cwd=outDir)
-              pdbFile = os.path.abspath(os.path.join(outDir, '{}.pdb'.format(outName)))
-          else:
-              pdbFile = inFile
+      inAs = self.inputAtomStruct.get()
+      if not hasattr(inAs, '_maeFile'):
+          inFile = inAs.getFileName()
+          cifFile = self._getCifFile()
+          cifFromASFile(inFile, cifFile, atomStruct=inAs)
 
           maeFile = self.getInputMaeFile()
-          prog = Plugin.getHome('utilities/prepwizard')
-          print('Program: ', prog)
+          prog = schrodingerPlugin.getHome('utilities/prepwizard')
           args = ' -WAIT -noprotassign -noimpref -noepik {} {}'.\
-            format(os.path.abspath(pdbFile), os.path.abspath(maeFile))
+            format(os.path.abspath(cifFile), os.path.abspath(maeFile))
           self.runJob(prog, args, cwd=self._getExtraPath())
+      else:
+        maeFile = inAs._maeFile.get()
+        mae2cif(maeFile, self._getCifFile())
 
     def sitemapStep(self):
-        prog=Plugin.getHome('sitemap')
+        prog=schrodingerPlugin.getHome('sitemap')
 
         fnIn = os.path.abspath(self.getInputMaeFile())
-        args='-WAIT -prot %s -j %s -keepvolpts' % (fnIn, self.getJobName())
-        args+=" -maxsites %d"%self.maxsites.get()
+        args = '-WAIT -prot %s -j %s -keepvolpts' % (fnIn, self.getJobName())
+        args += f" -maxsites {self.maxsites.get()}"
 
         self.runJob(prog, args, cwd=self._getExtraPath())
 
-    def createOutput(self):
+    def createOutputStep(self):
         fnBinding = self.getMaestroOutput()
         fnStructure = self.getInputMaeFile()
         fnLog = self.getOutputLogFile()
+
+        setFile = self._getPath('structROIs.sqlite')
+        if os.path.exists(setFile):
+          os.remove(setFile)
+        outPockets = SetOfStructROIs(filename=setFile)
+
         if os.path.exists(fnBinding):
-            proteinFile, pocketFiles = self.createOutputPDBFile()
-            outPockets = SetOfStructROIs(filename=self._getPath('structROIs.sqlite'))
+            proteinFile, pocketFiles = self.createOutputStepCIFFile()
+
             for oFile in pocketFiles:
               pock = StructROI(oFile, proteinFile, fnLog, pClass='SiteMap')
               pock._maeFile = pwobj.String(fnStructure)
               outPockets.append(pock)
 
             outPockets.buildPDBhetatmFile()
-            self._defineOutputs(outputStructROIs=outPockets)
+
+        self._defineOutputs(outputStructROIs=outPockets)
 
     def _citations(self):
         return
@@ -106,122 +113,91 @@ class ProtSchrodingerSiteMap(EMProtocol):
 
 ########################## UTILS FUNCTIONS
     def getInputMaeFile(self):
-        if not hasattr(self.inputStructure.get(), '_maeFile'):
+        if not hasattr(self.inputAtomStruct.get(), '_maeFile'):
             maeFile = self._getExtraPath('inputReceptor.mae')
         else:
-            maeFile = self.inputStructure.get()._maeFile.get()
+            maeFile = self.inputAtomStruct.get()._maeFile.get()
         return maeFile
 
     def getJobName(self):
       if self.jobName.get() != '':
         return self.jobName.get()
       else:
-        return self.getInputFileName().split('/')[-1].split('.')[0]
+        return self._getInputName()
 
-    def createOutputPDBFile(self):
-      maeFile = os.path.abspath(self.getMaestroOutput())
-      pdbOutFile = self.getJobName()+'_out.pdb'
-      pdbFiles = self.maestro2pdb(maeFile, pdbOutFile, outDir=self._getPath())
-
-      # Creates a pdb with the HETATM corresponding to pocket points
-      pdbFiles, proteinFile = self.mergePDBFiles(pdbFiles, pdbOutFile)
-      return proteinFile, pdbFiles
+    def createOutputStepCIFFile(self):
+      jobName = self.getJobName()
+      cifFiles = self.buildPocketFiles(jobName, outDir=self._getExtraPath())
+      proteinFile = self._getExtraPath(jobName + '.cif')
+      return proteinFile, cifFiles
 
     def getMaestroOutput(self):
         return self._getExtraPath("{}_out.maegz".format(self.getJobName()))
 
-    def getInputFileName(self):
-        return self.inputStructure.get().getFileName()
-
     def getOutputLogFile(self):
         return self._getExtraPath('{}.log'.format(self.getJobName()))
 
-    def maestro2pdb(self, maeIn, pdbOut, outDir):
-      '''Convert a maestro file (.mae) to a pdb file(s)
-      maeIn: input maestro file (if contains several models, there will be several outputs
-      pdbOut: name of the output (with or without .pdb)'''
-      pdbOut = self.getPDBName(pdbOut)[1]
+    def buildPocketFiles(self, cifName, outDir):
+      '''Build pocket files
+      cifOut: name of the output (with or without .cif)'''
+      cifFiles = []
+      pdbFiles = self.searchOutPDBFiles(cifName, outDir)
+      for pocketK, pFile in enumerate(pdbFiles):
+        cifCols = '\n'.join(CIF_DEF_COLS)
+        outStr = CIF_DEF_HEADER.format(cifCols)
+        
+        with open(pFile) as f:
+          for i, line in enumerate(f):
+            if line.startswith('HETATM'):
+              sline = line.split()
+              idx = (5, 8)
+              if len(sline) < 11:
+                sline = splitPDBLine(line)
+                idx = (6, 9)
+              coords = [float(c) for c in sline[idx[0]:idx[1]]]
+              if coords:
+                replacements = [str(i + 1), f'C{i + 1}', 'STP', 'C', 1, pocketK+1, *coords]
+                outStr += writeCIFLine(*replacements)
+        
+        cifFile = pFile.replace('.pdb', '.cif')
+        with open(cifFile, 'w') as fo:
+          fo.write(outStr)
+        cifFiles.append(cifFile)
 
-      prog = Plugin.getHome('utilities/structconvert')
-      args = '{} {}'.format(maeIn, pdbOut)
-      try:
-          self.runJob(prog, args, cwd=self._getPath())
-      except CalledProcessError as exception:
-          # ask to Schrodinger why it returns a code 2 if it worked properly
-          if exception.returncode != 2:
-              raise exception
+      return cifFiles
 
-      pdbFiles = self.searchOutPDBFiles(pdbOut, outDir)
-      if len(pdbFiles) > 1:
-        return pdbFiles
-      else:
-        return pdbFiles[0]
-
-    def formatPocketStrLine(self, line, numId):
-      line = splitPDBLine(line)
-      replacements = ['HETATM', line[1], 'APOL', 'STP', 'C', numId, *line[5:-1], '', 'Ve']
-      pdbLine = writePDBLine(replacements)
-      return pdbLine
-
-    def mergePDBFiles(self, pdbFiles, pdbOutFile):
-        atomLines, hetatmLines = '', ''
-        pocketIds = []
-        for pFile in pdbFiles:
-            fileId = pFile.split('-')[-1].split('.')[0]
-            with open(pFile) as fpdb:
-                for line in fpdb:
-                    if line.startswith('TITLE') and '_site_' in line:
-                      pocketIds.append(fileId)
-                    elif line.startswith('ATOM'):
-                      atomLines += line
-                    elif line.startswith('HETATM'):
-                      newLine = self.formatPocketStrLine(line, fileId)
-                      hetatmLines += newLine
-
-        with open(self._getPath(pdbOutFile), 'w') as f:
-          f.write(atomLines)
-          f.write(hetatmLines)
-          f.write('\nTER')
-
-        pdbFiles, proteinFile = self.renamePDBFiles(pdbFiles, pocketIds)
-        return pdbFiles, proteinFile
-
-    def renamePDBFiles(self, pdbFiles, pocketIds):
-        tmpFiles = []
-        for pFile in pdbFiles:
-            pFile = os.path.abspath(pFile)
-            fileId = pFile.split('-')[-1].split('.')[0]
-            print('File to id: ', pFile, fileId)
-            if fileId in pocketIds:
-                tmpFile = pFile.replace('-{}.pdb'.format(fileId), '-{}tmp.pdb'.format(fileId))
-                shutil.move(pFile, tmpFile)
-                tmpFiles.append(tmpFile)
-            else:
-                proteinFile = pFile.replace('out-{}.pdb'.format(fileId), 'protein.pdb')
-                shutil.move(pFile, proteinFile)
-
-        print('tmpFiles: ', tmpFiles)
-        finalPDBFiles = []
-        for tmpFile in tmpFiles:
-            finalPDBFiles.append(tmpFile.replace('tmp.pdb', '.pdb'))
-            shutil.move(tmpFile, finalPDBFiles[-1])
-        return finalPDBFiles, proteinFile
-
-    def getPDBName(self, pdbOut):
-      if '.pdb' in pdbOut:
-          pdbName = pdbOut.split('.pdb')[0]
-      else:
-          pdbName = pdbOut[:]
-          pdbOut += '.pdb'
-      return pdbName, pdbOut
-
-    def searchOutPDBFiles(self, pdbOutFile, outDir):
+    def searchOutPDBFiles(self, cifName, outDir):
       pdbFiles = []
-      pdbName, _ = self.getPDBName(pdbOutFile)
       for outFile in os.listdir(outDir):
-        if pdbName in outFile and '.pdb' in outFile:
+        if cifName in outFile and '.pdb' in outFile:
           pdbFiles.append(os.path.join(outDir, outFile))
+      pdbFiles = natural_sort(self.getCompactPockets(pdbFiles))
       return pdbFiles
+
+    def getCompactPockets(self, files):
+      bestFiles = {}
+      for f in files:
+        match = re.search(r"site_(\d+)_volpts", f)
+        if match:
+          siteId = match.group(1)
+          if siteId not in bestFiles or "compact" in f:
+            bestFiles[siteId] = f
+
+      return list(bestFiles.values())
+
+    def getInputPath(self):
+        return self.inputAtomStruct.get().getFileName()
+
+    def getInputFileName(self):
+        return self.getInputPath().split('/')[-1]
+
+    def _getCifFile(self):
+      return os.path.abspath(self._getExtraPath(self._getInputName() + '.cif'))
+
+    def _getInputName(self):
+        return getBaseName(self.getInputPath())
+
+
 
 
 

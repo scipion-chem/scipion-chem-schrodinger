@@ -81,7 +81,7 @@ class TestSitemap(TestSchroProtPrep):
     def _runSitemap(cls, targetProt):
         protSitemap = cls.newProtocol(
             ProtSchrodingerSiteMap,
-            inputStructure=targetProt.outputStructure)
+            inputAtomStruct=targetProt.outputStructure)
 
         cls.proj.launchProtocol(protSitemap, wait=False)
         return protSitemap
