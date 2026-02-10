@@ -160,6 +160,16 @@ def maeLineSplit(maeLine):
     elements.append(ele)
     return elements
 
+def convertMAE2Mol2File(molFile, outDir, poseId=None):
+    fnOut = os.path.join(outDir, os.path.split(molFile)[-1])
+    args = f'{molFile} {fnOut} '
+    if poseId:
+        args += f'-n {poseId}'
+
+    subprocess.run(f'{structConvertProg} {args}', check=True, capture_output=True, text=True, shell=True)
+    fnOut = relabelAtomsMol2(fnOut)
+    return fnOut
+
 def convertMAE2Mol2(mol, outDir, subset=True):
     molName = mol.getUniqueName()
     poseFile = mol.poseFile.get()
