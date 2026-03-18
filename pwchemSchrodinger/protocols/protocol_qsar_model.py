@@ -32,8 +32,9 @@ import os, subprocess
 
 # Scipion em imports
 from pwem.objects.data import AtomStruct
+from pyworkflow.protocol.constants import LEVEL_ADVANCED
 from pwem.protocols import EMProtocol
-from pyworkflow.protocol.params import PointerParam, EnumParam, STEPS_PARALLEL
+from pyworkflow.protocol.params import PointerParam, EnumParam, STEPS_PARALLEL, FloatParam, StringParam, IntParam
 
 # Scipion chem imports
 from pwchem.objects import SetOfSmallMolecules
@@ -42,7 +43,6 @@ from pwchem.constants import RDKIT_DIC
 from pwchem import Plugin as pwchemPlugin
 
 from .. import Plugin as schrodingerPlugin
-from pwchemSchrodinger import SCHRODINGER_DIC
 
 class ProtSchrodingerQSAR(EMProtocol):
     """Create field-based QSAR model"""
@@ -62,9 +62,48 @@ class ProtSchrodingerQSAR(EMProtocol):
         #              label='Input small molecules:',
         #              help='Input small molecules to convert')
 
-        form.addParam('type', EnumParam, label='Target: ', default=0,
+        form.addParam('type', EnumParam, label='Target type: ', default=0,
                        choices=['Kinases', 'GPCRs', 'Enzymes'],
                        help='Target type to build QSAR model.')
+        form.addParam('style', StringParam, label='Fields: ', default='ff',
+                      help='Fields to include (can be more than one): \n'
+                           '- ff: all force fields\n'
+                           '- ff_s: force field steric (Lennar-Jones)\n'
+                           '- ff_e: force field electrostatic (q/r)\n'
+                           '- qm_e: electrostatic field precomputed by Jaguar\n'
+                           '- gauss_s: gaussian steric\n'
+                           '- gauss_e: gaussian electrostatic\n'
+                           '- gauss_h: gaussian hydrophobic\n'
+                           '- gauss_a: gaussian H bond acceptor\n'
+                           '- gauss_d: gaussian H bond donor\n'
+                           '- gauss: all above gaussian fields\n'
+                           '- gauss_r: gaussian aromatic ring\n'
+                           '- gauss_ext: gauss + gauss_r')
+        form.addParam('forceField', EnumParam, label='Force field: ', default=1,
+                      choices=['OPLS_2005', 'OPLS4'],
+                      help='Force field from which to draw atom based parameters.')
+        form.addParam('train', FloatParam, label='Training partition: ', default=0.8,
+                      help='Partition of train set.')
+        form.addParam('lno', IntParam, label='Leave-n-out cross-validation: ', default=10,
+                      help='Number of training set observations to exclude for cross-validation.\n'
+                           'Guidelines:\n'
+                           '- small datasets (<20 mols): 1\n'
+                           '- medium datasets (20-100 mols): 5-10\n'
+                           '- large datasets (>100 mols): 10')
+
+        group = form.addGroup('Grid and FF params', expertLevel=LEVEL_ADVANCED)
+        group.addParam('grid', FloatParam, label='Grid spacing (Å):', default=1.0,
+                       help='Spacing of field points in angstroms (0.5–4.0)')
+        group.addParam('extend', FloatParam, label='Grid extension (Å):', default=3.0,
+                       help='Distance to extend grid beyond training set limits')
+        group.addParam('buff', FloatParam, label='Field exclusion radius (Å):', default=2.0,
+                       help='Ignore force field at grid points within this distance from any atom')
+        group.addParam('scut', FloatParam, label='Steric cutoff (kcal/mol):', default=30.0,
+                       help='Truncate steric force fields at this value')
+        group.addParam('ecut', FloatParam, label='Electrostatic cutoff (kcal/mol):', default=30.0,
+                       help='Truncate electrostatic fields at this value')
+        group.addParam('sd', FloatParam, label='Min field stddev:', default=0.01,
+                       help='Ignore fields if standard deviation over training set is less than this')
 
         form.addParallelSection(threads=4, mpi=1)
 
@@ -145,14 +184,14 @@ class ProtSchrodingerQSAR(EMProtocol):
                 "smiles": data["smiles"],
                 "pIC50": avg_pIC50
             })
-        csvFile = self._getPath("qsar_dataset.csv")
+        csvFile = self._getExtraPath("qsar_dataset.csv")
         with open(csvFile, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=["name", "smiles", "pIC50"])
             writer.writeheader()
             writer.writerows(finalData)
 
         script = "csvToSDF.py"
-        sdfFile = self._getPath("qsar_dataset.sdf")
+        sdfFile = self._getExtraPath("qsar_dataset.sdf")
         args = [os.path.abspath(csvFile), os.path.abspath(sdfFile)]
 
         pwchemPlugin.runScript(
@@ -173,20 +212,38 @@ class ProtSchrodingerQSAR(EMProtocol):
 
         outputSdf = os.path.abspath(os.path.join(outDir, "qsar_results.sdf"))
         predictionsCsv = outputSdf.replace(".sdf", "_pred.csv")
+        sumFile = os.path.abspath(os.path.join(outDir, "summary.txt"))
+        outputField = os.path.abspath(os.path.join(outDir, "qsar_field.csv"))
+        modelFile = os.path.abspath(os.path.join(outDir,"qsar_model.pharm"))
+        style = self.style.get()
+        ff = self.forceField.choices[self.forceField.get()]
 
         args = [
-            inputSdf,  # input SDF
-            outputSdf,  # output SDF
-            "pIC50",  # activity property (positional)
+            inputSdf,
+            outputSdf,
+            "pIC50",
             "-build",
-            "-style", "ff",
-            "-opred", predictionsCsv
+            "-style", style,
+            "-force_field", ff,
+            "-pt", self.train.get(),
+            "-LNO", self.lno.get(),
+            "-grid", self.grid.get(),
+            "-extend", self.extend.get(),
+            "-buff", self.buff.get(),
+            "-scut", self.scut.get(),
+            "-ecut", self.ecut.get(),
+            "-sd", self.sd.get(),
+            "-omod", modelFile,
+            "-opred", predictionsCsv,
+            "-osum", sumFile,
+            "-ofield", outputField
         ]
 
         prog = schrodingerPlugin.getHome("phase_fqsar")
         self.runJob(prog, args, cwd=self._getExtraPath())
 
-        print(f"QSAR SDF saved to: {outputSdf}")
+        print(f"QSAR model saved to: {modelFile}")
+        print(f"Training/testing SDF saved to: {outputSdf}")
         print(f"Predictions CSV saved to: {predictionsCsv}")
 
 
@@ -207,6 +264,8 @@ class ProtSchrodingerQSAR(EMProtocol):
 
     def _validate(self):
         validations = []
+        if self.grid.get() < 0.5 or self.grid.get() > 4.0:
+            validations.append('Grid parameter for field must be between 0.5 and 4.0')
         return validations
 
     def _warnings(self):
