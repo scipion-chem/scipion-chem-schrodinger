@@ -38,6 +38,7 @@ from pyworkflow.protocol.params import PointerParam, EnumParam, STEPS_PARALLEL, 
 
 # Scipion chem imports
 from pwchem.objects import SetOfSmallMolecules
+from pwchemSchrodinger.objects import SchrodingerQSARModel
 
 from pwchem.constants import RDKIT_DIC
 from pwchem import Plugin as pwchemPlugin
@@ -52,9 +53,6 @@ class ProtSchrodingerQSAR(EMProtocol):
     GPCRs = ['CHEMBL251', 'CHEMBL210', 'CHEMBL228']
     enzymes = ['CHEMBL204', 'CHEMBL325', 'CHEMBL3927']
 
-    def __init__(self, **kwargs):
-        EMProtocol.__init__(self, **kwargs)
-        self.stepsExecutionMode = STEPS_PARALLEL
 
     def _defineParams(self, form):
         form.addSection(label='Input')
@@ -105,12 +103,12 @@ class ProtSchrodingerQSAR(EMProtocol):
         group.addParam('sd', FloatParam, label='Min field stddev:', default=0.01,
                        help='Ignore fields if standard deviation over training set is less than this')
 
-        form.addParallelSection(threads=4, mpi=1)
 
     # --------------------------- INSERT steps functions --------------------
     def _insertAllSteps(self):
         self._insertFunctionStep('getpIC50Step')
         self._insertFunctionStep('runPhaseQSARStep')
+        self._insertFunctionStep('createOutputStep')
 
     def getpIC50Step(self):
         if self.type.get() == 0:
@@ -205,18 +203,20 @@ class ProtSchrodingerQSAR(EMProtocol):
     def runPhaseQSARStep(self):
         """Run Schrödinger Phase field-based QSAR directly from SDF input."""
 
-        inputSdf = os.path.abspath(self._getPath("qsar_dataset.sdf"))
+        inputSdf = os.path.abspath(self._getExtraPath("qsar_dataset.sdf"))
 
         outDir = self._getPath("qsar_output")
         os.makedirs(outDir, exist_ok=True)
 
         outputSdf = os.path.abspath(os.path.join(outDir, "qsar_results.sdf"))
         predictionsCsv = outputSdf.replace(".sdf", "_pred.csv")
-        sumFile = os.path.abspath(os.path.join(outDir, "summary.txt"))
         outputField = os.path.abspath(os.path.join(outDir, "qsar_field.csv"))
+        sumFile = os.path.abspath(os.path.join(outDir, "qsar_summary.txt"))
         modelFile = os.path.abspath(os.path.join(outDir,"qsar_model.pharm"))
         style = self.style.get()
-        ff = self.forceField.choices[self.forceField.get()]
+        ffNum = self.forceField.get()
+        if ffNum == 0: ff = 'OPLS_2005'
+        else: ff = 'OPLS4'
 
         args = [
             inputSdf,
@@ -234,13 +234,18 @@ class ProtSchrodingerQSAR(EMProtocol):
             "-ecut", self.ecut.get(),
             "-sd", self.sd.get(),
             "-omod", modelFile,
-            "-opred", predictionsCsv,
             "-osum", sumFile,
+            "-opred", predictionsCsv,
             "-ofield", outputField
         ]
 
         prog = schrodingerPlugin.getHome("phase_fqsar")
         self.runJob(prog, args, cwd=self._getExtraPath())
+
+        if os.path.exists(sumFile):
+            print("\n===== QSAR SUMMARY =====\n")
+            with open(sumFile, 'r') as f:
+                print(f.read())
 
         print(f"QSAR model saved to: {modelFile}")
         print(f"Training/testing SDF saved to: {outputSdf}")
@@ -248,10 +253,29 @@ class ProtSchrodingerQSAR(EMProtocol):
 
 
     def createOutputStep(self):
-        if self.inputType.get() == 0:
-            self._defineOutputs(outputSmallMolecules=self.outputSmallMolecules)
+        outDir = self._getPath("qsar_output")
+
+        model = SchrodingerQSARModel(modelFile = os.path.join(outDir,"qsar_model.pharm"))
+        model.summaryFile.set(os.path.join(outDir, "qsar_summary.txt"))
+        model.predictionsFile.set(os.path.join(outDir, "qsar_pred.csv"))
+        model.sdfFile.set(os.path.join(outDir, "qsar_results.sdf"))
+        model.fieldFile.set(os.path.join(outDir, "qsar_field.csv"))
+
+        style = self.style.get()
+        ffNum = self.forceField.get()
+        if ffNum == 0:
+            ff = 'OPLS_2005'
         else:
-            self._defineOutputs(outputStructure=self.target)
+            ff = 'OPLS4'
+        model.style.set(style)
+        model.forceField.set(ff)
+        model.trainFraction.set(self.train.get())
+        model.lno.set(self.lno.get())
+
+        self._defineOutputs(SchrodingerQSARModel=model)
+
+
+
 
     # --------------------------- INFO functions -----------------------------------
     def _summary(self):

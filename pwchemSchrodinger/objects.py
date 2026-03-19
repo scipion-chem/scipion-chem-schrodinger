@@ -188,4 +188,26 @@ class SchrodingerBindingSites(data.EMFile):
         data.EMFile.__init__(self, **kwargs)
 
 
+class SchrodingerQSARModel(data.EMObject):
+    """Object to store a Phase QSAR model and its metadata."""
+
+    def __init__(self, **kwargs):
+        data.EMObject.__init__(self, **kwargs)
+        self.modelFile = String()
+        self.summaryFile = String()
+        self.predictionsFile = String()
+        self.sdfFile = String()
+        self.fieldFile = String()
+
+        self.style = String()
+        self.forceField = String()
+        self.trainFraction = Float()
+        self.lno = Integer()
+
+    def setModelFile(self, fn):
+        self.modelFile.set(fn)
+
+    def getModelFile(self):
+        return self.modelFile.get()
+
 
