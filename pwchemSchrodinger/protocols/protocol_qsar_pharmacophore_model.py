@@ -46,8 +46,8 @@ from pwchem import Plugin as pwchemPlugin
 from .. import Plugin as schrodingerPlugin
 
 class ProtSchrodingerQSARPharmacophore(EMProtocol):
-    """Create field-based QSAR model"""
-    _label = 'field-based QSAR model'
+    """Create pharmacophore-based QSAR model"""
+    _label = 'pharmacophore-based QSAR model'
 
     kinases = ['CHEMBL203', 'CHEMBL1862', 'CHEMBL2971', 'CHEMBL279', 'CHEMBL240']
     GPCRs = ['CHEMBL251', 'CHEMBL210', 'CHEMBL228']
