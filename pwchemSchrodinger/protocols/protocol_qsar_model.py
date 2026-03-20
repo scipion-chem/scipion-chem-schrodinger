@@ -28,13 +28,13 @@ import csv
 import requests
 import math
 import time
-import os, subprocess
+import os, subprocess, shutil
 
 # Scipion em imports
 from pwem.objects.data import AtomStruct
 from pyworkflow.protocol.constants import LEVEL_ADVANCED
 from pwem.protocols import EMProtocol
-from pyworkflow.protocol.params import PointerParam, EnumParam, STEPS_PARALLEL, FloatParam, StringParam, IntParam
+from pyworkflow.protocol.params import PointerParam, EnumParam, STEPS_PARALLEL, FloatParam, StringParam, IntParam, FileParam
 
 # Scipion chem imports
 from pwchem.objects import SetOfSmallMolecules
@@ -56,13 +56,21 @@ class ProtSchrodingerQSAR(EMProtocol):
 
     def _defineParams(self, form):
         form.addSection(label='Input')
-        #form.addParam('inputSmallMolecules', PointerParam, pointerClass="SetOfSmallMolecules",
-        #              label='Input small molecules:',
-        #              help='Input small molecules to convert')
 
-        form.addParam('type', EnumParam, label='Target type: ', default=0,
+        form.addParam('input', EnumParam, label='Input source: ', default=0,
+                      choices=['ChEMBL', 'SetOfSmallMolecules', 'CSV activity file'],
+                      help='Choose whether to obtain molecules directly from ChEMBL or from a set.')
+        form.addParam('inputSmallMolecules', PointerParam, pointerClass="SetOfSmallMolecules",
+                      label='Input small molecules:', condition='input==1',
+                      help='Input small molecules to convert.')
+        form.addParam('type', EnumParam, label='Target type: ', default=0, condition='input==0',
                        choices=['Kinases', 'GPCRs', 'Enzymes'],
                        help='Target type to build QSAR model.')
+        form.addParam('inputFile', FileParam, label="Activity file: ", condition='input==2',
+                       help='CSV file with activity info. Each row should be a molecule with a column containing IC50 or pIC50 activity values in nM.')
+
+        form.addParam('actFilter', FloatParam, label='Activity threshold: ', default=0.0,
+                      help='Keep molecules with activity over threshold value.')
         form.addParam('style', StringParam, label='Fields: ', default='ff',
                       help='Fields to include (can be more than one): \n'
                            '- ff: all force fields\n'
@@ -89,7 +97,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                            '- medium datasets (20-100 mols): 5-10\n'
                            '- large datasets (>100 mols): 10')
 
-        group = form.addGroup('Grid and FF params', expertLevel=LEVEL_ADVANCED)
+        group = form.addGroup('Grid and FF params')
         group.addParam('grid', FloatParam, label='Grid spacing (Å):', default=1.0,
                        help='Spacing of field points in angstroms (0.5–4.0)')
         group.addParam('extend', FloatParam, label='Grid extension (Å):', default=3.0,
@@ -97,18 +105,176 @@ class ProtSchrodingerQSAR(EMProtocol):
         group.addParam('buff', FloatParam, label='Field exclusion radius (Å):', default=2.0,
                        help='Ignore force field at grid points within this distance from any atom')
         group.addParam('scut', FloatParam, label='Steric cutoff (kcal/mol):', default=30.0,
+                       expertLevel=LEVEL_ADVANCED,
                        help='Truncate steric force fields at this value')
         group.addParam('ecut', FloatParam, label='Electrostatic cutoff (kcal/mol):', default=30.0,
+                       expertLevel=LEVEL_ADVANCED,
                        help='Truncate electrostatic fields at this value')
         group.addParam('sd', FloatParam, label='Min field stddev:', default=0.01,
+                       expertLevel=LEVEL_ADVANCED,
                        help='Ignore fields if standard deviation over training set is less than this')
 
 
     # --------------------------- INSERT steps functions --------------------
     def _insertAllSteps(self):
-        self._insertFunctionStep('getpIC50Step')
+        if self.input.get() == 0:
+            self._insertFunctionStep('getpIC50Step')
+        elif self.input.get() == 1:
+            self._insertFunctionStep('extractpIC50Step')
+        else:
+            self._insertFunctionStep('checkActivityStep')
+        self._insertFunctionStep('createSdfStep')
         self._insertFunctionStep('runPhaseQSARStep')
         self._insertFunctionStep('createOutputStep')
+
+    def extractpIC50Step(self):
+        inputSet = self.inputSmallMolecules.get()
+        txtFile = self._getExtraPath("sdf_list.txt")
+
+        with open(txtFile, "w") as f:
+            for mol in inputSet:
+                f.write(f"{os.path.abspath(mol.getFileName())}\n")
+
+        smilesCsv = self._getExtraPath("qsar_dataset.csv")
+
+        script = "extractSmiles.py"
+        args = [
+            os.path.abspath(txtFile),
+            os.path.abspath(smilesCsv)
+        ]
+        pwchemPlugin.runScript(
+            self,
+            script,
+            args,
+            env=RDKIT_DIC,
+            cwd=self._getPath(),
+            scriptDir=os.path.join(os.path.dirname(__file__), "../scripts")
+        )
+
+        updatedRows = []
+        with open(smilesCsv, "r") as f:
+            reader = csv.DictReader(f)
+
+            fieldnames = reader.fieldnames
+
+            for row in reader:
+                print(f'querying {row["smiles"]}')
+                name = row["name"]
+                smiles = row["smiles"]
+                url = "https://www.ebi.ac.uk/chembl/api/data/activity.json"
+
+                params = {
+                    "canonical_smiles": smiles,
+                    "standard_type": "IC50",
+                    "standard_relation": "=",
+                    "limit": 100
+                }
+
+                pIC50_values = []
+
+                try:
+                    for attempt in range(5):
+                        try:
+                            r = requests.get(url, params=params, timeout=30)
+                            if r.status_code == 200:
+                                break
+                        except:
+                            time.sleep(2 ** attempt)
+                    else:
+                        continue
+
+                    data = r.json()
+
+                    for act in data.get("activities", []):
+
+                        value = act.get("standard_value")
+                        units = act.get("standard_units")
+
+                        if not value or not units:
+                            continue
+
+                        try:
+                            value = float(value)
+                        except:
+                            continue
+
+                        if units == "nM":
+                            ic50_m = value * 1e-9
+                        elif units == "uM":
+                            ic50_m = value * 1e-6
+                        elif units == "mM":
+                            ic50_m = value * 1e-3
+                        elif units == "pM":
+                            ic50_m = value * 1e-12
+                        elif units == "fM":
+                            ic50_m = value * 1e-15
+                        else:
+                            continue
+
+                        pIC50 = -math.log10(ic50_m)
+                        pIC50_values.append(pIC50)
+
+                except Exception as e:
+                    print(f"ChEMBL error for {name}: {e}")
+                    continue
+
+                if len(pIC50_values) == 0:
+                    continue
+
+                row["pIC50"] = sum(pIC50_values) / len(pIC50_values)
+                updatedRows.append(row)
+
+        if "pIC50" not in fieldnames:
+            fieldnames = list(fieldnames) + ["pIC50"]
+        with open(smilesCsv, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(updatedRows)
+
+    def checkActivityStep(self):
+        csvFile = self.inputFile.get()
+        extraPath = self._getExtraPath()
+        destFile = os.path.join(extraPath, os.path.basename(csvFile))
+
+        shutil.copy(csvFile, destFile)
+
+        with open(csvFile, "r", newline="") as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames
+        if not fieldnames:
+            return
+        if "pIC50" in fieldnames:
+            print("pIC50 already present. No changes made.")
+            return
+        if "IC50" not in fieldnames:
+            print("No IC50 or pIC50 column found.")
+            return
+        rows = []
+        for row in reader:
+            value = row.get("IC50")
+
+            if not value:
+                continue
+            try:
+                value = float(value)
+            except:
+                continue
+
+            if value <= 0:
+                continue
+            pIC50 = 9 - math.log10(value)
+
+            row["pIC50"] = pIC50
+            del row["IC50"]
+
+            rows.append(row)
+
+        newFieldnames = [f for f in fieldnames if f != "IC50"] + ["pIC50"]
+
+        with open(csvFile, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=newFieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
 
     def getpIC50Step(self):
         if self.type.get() == 0:
@@ -130,9 +296,21 @@ class ProtSchrodingerQSAR(EMProtocol):
             }
             while url:
                 try:
-                    r = requests.get(url, params=params, timeout=20)
-                    if r.status_code != 200:
-                        print(f"Failed to fetch {targetId}")
+                    for attempt in range(5):
+                        try:
+                            r = requests.get(url, params=params, timeout=60)
+                            if r.status_code == 200:
+                                break
+                            else:
+                                print(f"Failed to fetch {targetId} (status {r.status_code})")
+                        except requests.exceptions.Timeout:
+                            print(f"Timeout fetching {targetId} (attempt {attempt + 1}/5)")
+                            time.sleep(2 ** attempt)
+                        except Exception as e:
+                            print(f"Error fetching {targetId}: {e}")
+                            time.sleep(2 ** attempt)
+                    else:
+                        print(f"Skipping {targetId} after multiple failed attempts")
                         break
                     data = r.json()
                     for act in data.get("activities", []):
@@ -153,10 +331,18 @@ class ProtSchrodingerQSAR(EMProtocol):
                             ic50_m = value * 1e-6
                         elif units == "mM":
                             ic50_m = value * 1e-3
+                        elif units == "pM":
+                            ic50_m = value * 1e-12
+                        elif units == "fM":
+                            ic50_m = value * 1e-15
                         else:
                             continue
 
                         pIC50 = -math.log10(ic50_m)
+
+                        if pIC50 < self.actFilter.get():
+                            continue
+
                         allResults.append({
                             "name": chemblId,
                             "smiles": smiles,
@@ -188,7 +374,9 @@ class ProtSchrodingerQSAR(EMProtocol):
             writer.writeheader()
             writer.writerows(finalData)
 
+    def createSdfStep(self):
         script = "csvToSDF.py"
+        csvFile = self._getExtraPath("qsar_dataset.csv")
         sdfFile = self._getExtraPath("qsar_dataset.sdf")
         args = [os.path.abspath(csvFile), os.path.abspath(sdfFile)]
 
@@ -257,7 +445,7 @@ class ProtSchrodingerQSAR(EMProtocol):
 
         model = SchrodingerQSARModel(modelFile = os.path.join(outDir,"qsar_model.pharm"))
         model.summaryFile.set(os.path.join(outDir, "qsar_summary.txt"))
-        model.predictionsFile.set(os.path.join(outDir, "qsar_pred.csv"))
+        model.predictionsFile.set(os.path.join(outDir, "qsar_results_pred.csv"))
         model.sdfFile.set(os.path.join(outDir, "qsar_results.sdf"))
         model.fieldFile.set(os.path.join(outDir, "qsar_field.csv"))
 
@@ -275,8 +463,6 @@ class ProtSchrodingerQSAR(EMProtocol):
         self._defineOutputs(SchrodingerQSARModel=model)
 
 
-
-
     # --------------------------- INFO functions -----------------------------------
     def _summary(self):
         summary=[]
@@ -288,8 +474,6 @@ class ProtSchrodingerQSAR(EMProtocol):
 
     def _validate(self):
         validations = []
-        if self.grid.get() < 0.5 or self.grid.get() > 4.0:
-            validations.append('Grid parameter for field must be between 0.5 and 4.0')
         return validations
 
     def _warnings(self):
