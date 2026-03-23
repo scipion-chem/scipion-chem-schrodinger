@@ -71,6 +71,9 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
         form.addParam('inputFile', FileParam, label="Activity file: ", condition='input==2',
                       help='CSV file with activity info. Each row should be a molecule with a column containing IC50 or pIC50 activity values in nM.')
 
+        form.addParam('actFilter', FloatParam, label='Activity threshold: ', default=0.0,
+                      help='Keep molecules with activity over threshold value.')
+
         group = form.addGroup('Molecule preparation params')
         group.addParam('epik', EnumParam, label='Epik version: ', choices=['Classic', 'Modern'],
                        default=1,
@@ -121,6 +124,33 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
         group.addParam('select', FloatParam, label='Selectivity score weight: ', default=1, expertLevel=LEVEL_ADVANCED,
                        help='Selectivity score weight to use when computing Survival score.')
 
+        group = form.addGroup('QSAR model params')
+        group.addParam('hypos', IntParam, label='Top N hypothesis: ', default=1,
+                       help='Top N hypothesis to consider.')
+        group.addParam('style', EnumParam, label='Style: ', choices=['atom', 'pharmacophore'],
+                       default=0,
+                       help='Indicates whether models should be created from atoms or pharmacophore sites.')
+        group.addParam('lno', IntParam, label='Leave-n-out cross-validation: ', default=10,
+                      help='Number of training set observations to exclude for cross-validation.\n'
+                           'Guidelines:\n'
+                           '- small datasets (<20 mols): 1\n'
+                           '- medium datasets (20-100 mols): 5-10\n'
+                           '- large datasets (>100 mols): 10')
+        group.addParam('grid', FloatParam, label='Grid spacing (Å):', default=1.0,
+                       help='Spacing of field points in angstroms (0.5–4.0)')
+        group.addParam('tvalue', FloatParam, label='T-value: ', default=2.00, expertLevel=LEVEL_ADVANCED,
+                       help=' Eliminate a volume occupation bit if its absolute t-value'
+                       'is less than <tmin>. The t-value is a measure of a'
+                       'variables statistical significance, and its defined as'
+                       'b/bse, where b is the associated regression coefficient,'
+                       'and bse is the standard error in the coefficient')
+        group.addParam('atypes', BooleanParam, label='Use atom types: ',
+                       default=False, expertLevel=LEVEL_ADVANCED,
+                       help=' When determining the best ligand alignments, compute'
+                       'volume scores using overlap only between atoms of the'
+                       'same MacroModel type. This favors alignments that'
+                       'superimpose chemically similar atoms.')
+
         form.addParallelSection(threads=4, mpi=1)
 
     # --------------------------- INSERT steps functions --------------------
@@ -134,7 +164,7 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
         self._insertFunctionStep('runLigPrepStep')
         self._insertFunctionStep('createPhaseProjectStep')
         self._insertFunctionStep('createPharmacophoreDiscStep')
-        #self._insertFunctionStep('runPhaseQSARStep')
+        self._insertFunctionStep('runPhaseQSARStep')
         #self._insertFunctionStep('createOutputStep')
 
     def getpIC50Step(self):
@@ -361,58 +391,37 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
             time.sleep(interval)
             waited += interval
 
-
     def runPhaseQSARStep(self):
-        """Run Schrödinger Phase field-based QSAR directly from SDF input."""
+        projectFile = self._getExtraPath("phaseProject.phzip")
+        baseName = os.path.splitext(os.path.basename(projectFile))[0]
+        outputFile = self._getExtraPath(f"{baseName}_build_qsar.zip")
 
-        inputSdf = os.path.abspath(self._getExtraPath("qsar_dataset.sdf"))
-
-        outDir = self._getPath("qsar_output")
-        os.makedirs(outDir, exist_ok=True)
-
-        outputSdf = os.path.abspath(os.path.join(outDir, "qsar_results.sdf"))
-        predictionsCsv = outputSdf.replace(".sdf", "_pred.csv")
-        outputField = os.path.abspath(os.path.join(outDir, "qsar_field.csv"))
-        sumFile = os.path.abspath(os.path.join(outDir, "qsar_summary.txt"))
-        modelFile = os.path.abspath(os.path.join(outDir,"qsar_model.pharm"))
-        style = self.style.get()
-        ffNum = self.forceField.get()
-        if ffNum == 0: ff = 'OPLS_2005'
-        else: ff = 'OPLS4'
-
+        prog = schrodingerPlugin.getHome("phase_build_qsar")
+        st = self.style.get()
+        if st == 0: style = 'atom'
+        else: style = 'pharm'
         args = [
-            inputSdf,
-            outputSdf,
-            "pIC50",
-            "-build",
-            "-style", style,
-            "-force_field", ff,
-            "-pt", self.train.get(),
-            "-LNO", self.lno.get(),
-            "-grid", self.grid.get(),
-            "-extend", self.extend.get(),
-            "-buff", self.buff.get(),
-            "-scut", self.scut.get(),
-            "-ecut", self.ecut.get(),
-            "-sd", self.sd.get(),
-            "-omod", modelFile,
-            "-osum", sumFile,
-            "-opred", predictionsCsv,
-            "-ofield", outputField
+            os.path.abspath(projectFile),
+            '-LOCAL',
+            '-WAIT',
+            '-HOST', 'localhost',
+            '-style', style,
+            '-LNO', self.lno.get(),
+            '-grid', self.grid.get(),
+            '-tvalue', self.tvalue.get()
         ]
-
-        prog = schrodingerPlugin.getHome("phase_fqsar")
+        if self.atypes.get(): args.append('-atypes')
         self.runJob(prog, args, cwd=self._getExtraPath())
 
-        if os.path.exists(sumFile):
-            print("\n===== QSAR SUMMARY =====\n")
-            with open(sumFile, 'r') as f:
-                print(f.read())
+        timeout = 7200 #2h
+        waited = 0
+        interval = 5
 
-        print(f"QSAR model saved to: {modelFile}")
-        print(f"Training/testing SDF saved to: {outputSdf}")
-        print(f"Predictions CSV saved to: {predictionsCsv}")
-
+        while not os.path.exists(outputFile):
+            if waited >= timeout:
+                raise RuntimeError(f"phase_build_qsar did not create expected file: {outputFile}")
+            time.sleep(interval)
+            waited += interval
 
     def createOutputStep(self):
         outDir = self._getPath("qsar_output")
