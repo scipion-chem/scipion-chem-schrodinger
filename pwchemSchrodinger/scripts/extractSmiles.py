@@ -1,7 +1,36 @@
 import sys
 import csv
+import os
 from rdkit import Chem
 
+def load_molecules(filePath):
+    ext = os.path.splitext(filePath)[1].lower()
+
+    if ext in [".sdf", ".sd"]:
+        return Chem.SDMolSupplier(filePath)
+
+    elif ext == ".mol2":
+        mols = []
+        with open(filePath, "r") as f:
+            block = []
+            for line in f:
+                if line.startswith("@<TRIPOS>MOLECULE") and block:
+                    mol = Chem.MolFromMol2Block("".join(block), sanitize=False)
+                    if mol:
+                        mols.append(mol)
+                    block = []
+                block.append(line)
+
+            if block:
+                mol = Chem.MolFromMol2Block("".join(block), sanitize=False)
+                if mol:
+                    mols.append(mol)
+
+        return mols
+
+    else:
+        print(f"⚠️ Unsupported format: {filePath}")
+        return []
 
 def main():
 
@@ -11,23 +40,23 @@ def main():
     allRows = []
 
     with open(txtFile, "r") as f:
-        sdfFiles = [line.strip() for line in f if line.strip()]
+        molFiles = [line.strip() for line in f if line.strip()]
 
-    for sdfFile in sdfFiles:
+    for molFile in molFiles:
 
-        supplier = Chem.SDMolSupplier(sdfFile)
+        supplier = load_molecules(molFile)
 
         for mol in supplier:
             if mol is None:
                 continue
 
             try:
-                mol = Chem.RemoveHs(mol)
                 Chem.SanitizeMol(mol)
+                mol = Chem.RemoveHs(mol)
             except:
                 continue
 
-            name = mol.GetProp("_Name") if mol.HasProp("_Name") else "unknown"
+            name = mol.GetProp("_Name") if mol.HasProp("_Name") else os.path.basename(molFile)
             smiles = Chem.MolToSmiles(mol, canonical=True, isomericSmiles=True)
 
             allRows.append({

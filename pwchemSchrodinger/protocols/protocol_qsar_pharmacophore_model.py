@@ -49,7 +49,9 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
     """Create pharmacophore-based QSAR model"""
     _label = 'pharmacophore-based QSAR model'
 
-    kinases = ['CHEMBL203', 'CHEMBL1862', 'CHEMBL2971', 'CHEMBL279', 'CHEMBL240']
+    #kinases = ['CHEMBL203', 'CHEMBL1862', 'CHEMBL2971', 'CHEMBL279', 'CHEMBL240']
+    #todo to test maybe let users choose specific ids
+    kinases = ['CHEMBL203']
     GPCRs = ['CHEMBL251', 'CHEMBL210', 'CHEMBL228']
     enzymes = ['CHEMBL204', 'CHEMBL325', 'CHEMBL3927']
 
@@ -112,6 +114,9 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
                             'Higher values = more flexible models (less strict).'))
         group.addParam('keep', IntParam, label='Hypotheses per site: ', default=10,
                        help='Maximum number of hypotheses to retain for each number of sites.')
+        group.addParam('ex', BooleanParam, label='Full range of sites: ',
+                       default=False,
+                       help='Consider the full range of sites, from <max> to <min>')
 
         group.addParam('redun', FloatParam, label='Redundancy: ', default=0.25, expertLevel=LEVEL_ADVANCED,
                        help='Site point positional difference for elimination of redundant pharmacophores.')
@@ -531,6 +536,7 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
             '-vol', self.vol.get(),
             '-select', self.select.get()
         ]
+        if self.ex.get(): args.append('-ex')
         self.runJob(prog, args, cwd=self._getExtraPath())
 
         timeout = 800
