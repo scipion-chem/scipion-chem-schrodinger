@@ -27,7 +27,7 @@
 import csv
 import requests
 import math
-import time
+import time, shutil
 import os, subprocess
 
 # Scipion em imports
@@ -161,11 +161,175 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
             self._insertFunctionStep('extractpIC50Step')
         else:
             self._insertFunctionStep('checkActivityStep')
+        self._insertFunctionStep('createSdfStep')
         self._insertFunctionStep('runLigPrepStep')
         self._insertFunctionStep('createPhaseProjectStep')
         self._insertFunctionStep('createPharmacophoreDiscStep')
         self._insertFunctionStep('runPhaseQSARStep')
         #self._insertFunctionStep('createOutputStep')
+
+    def createSdfStep(self):
+        script = "csvToSDF.py"
+        csvFile = self._getExtraPath("qsar_dataset.csv")
+        sdfFile = self._getExtraPath("qsar_dataset.sdf")
+        args = [os.path.abspath(csvFile), os.path.abspath(sdfFile)]
+
+        pwchemPlugin.runScript(
+            self,
+            script,
+            args,
+            env=RDKIT_DIC,
+            cwd=self._getPath(),
+            scriptDir=os.path.join(os.path.dirname(__file__), "../scripts"))
+
+
+    def extractpIC50Step(self):
+        inputSet = self.inputSmallMolecules.get()
+        txtFile = self._getExtraPath("sdf_list.txt")
+
+        with open(txtFile, "w") as f:
+            for mol in inputSet:
+                f.write(f"{os.path.abspath(mol.getFileName())}\n")
+
+        smilesCsv = self._getExtraPath("qsar_dataset.csv")
+
+        script = "extractSmiles.py"
+        args = [
+            os.path.abspath(txtFile),
+            os.path.abspath(smilesCsv)
+        ]
+        pwchemPlugin.runScript(
+            self,
+            script,
+            args,
+            env=RDKIT_DIC,
+            cwd=self._getPath(),
+            scriptDir=os.path.join(os.path.dirname(__file__), "../scripts")
+        )
+
+        updatedRows = []
+        with open(smilesCsv, "r") as f:
+            reader = csv.DictReader(f)
+
+            fieldnames = reader.fieldnames
+
+            for row in reader:
+                name = row["name"]
+                smiles = row["smiles"]
+                url = "https://www.ebi.ac.uk/chembl/api/data/activity.json"
+
+                params = {
+                    "canonical_smiles": smiles,
+                    "standard_type": "IC50",
+                    "standard_relation": "=",
+                    "limit": 100
+                }
+
+                pIC50_values = []
+
+                try:
+                    for attempt in range(5):
+                        try:
+                            r = requests.get(url, params=params, timeout=30)
+                            if r.status_code == 200:
+                                break
+                        except:
+                            time.sleep(2 ** attempt)
+                    else:
+                        continue
+
+                    data = r.json()
+
+                    for act in data.get("activities", []):
+
+                        value = act.get("standard_value")
+                        units = act.get("standard_units")
+
+                        if not value or not units:
+                            continue
+
+                        try:
+                            value = float(value)
+                        except:
+                            continue
+
+                        if units == "nM":
+                            ic50_m = value * 1e-9
+                        elif units == "uM":
+                            ic50_m = value * 1e-6
+                        elif units == "mM":
+                            ic50_m = value * 1e-3
+                        elif units == "pM":
+                            ic50_m = value * 1e-12
+                        elif units == "fM":
+                            ic50_m = value * 1e-15
+                        else:
+                            continue
+
+                        pIC50 = -math.log10(ic50_m)
+                        pIC50_values.append(pIC50)
+
+                except Exception as e:
+                    print(f"ChEMBL error for {name}: {e}")
+                    continue
+
+                if len(pIC50_values) == 0:
+                    continue
+
+                row["pIC50"] = sum(pIC50_values) / len(pIC50_values)
+                updatedRows.append(row)
+
+        if "pIC50" not in fieldnames:
+            fieldnames = list(fieldnames) + ["pIC50"]
+        with open(smilesCsv, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(updatedRows)
+
+    def checkActivityStep(self):
+        csvFile = self.inputFile.get()
+        extraPath = self._getExtraPath()
+        destFile = os.path.join(extraPath, os.path.basename(csvFile))
+
+        shutil.copy(csvFile, destFile)
+
+        with open(csvFile, "r", newline="") as f:
+            reader = csv.DictReader(f)
+            fieldnames = reader.fieldnames
+        if not fieldnames:
+            return
+        if "pIC50" in fieldnames:
+            print("pIC50 already present. No changes made.")
+            return
+        if "IC50" not in fieldnames:
+            print("No IC50 or pIC50 column found.")
+            return
+        rows = []
+        for row in reader:
+            value = row.get("IC50")
+
+            if not value:
+                continue
+            try:
+                value = float(value)
+            except:
+                continue
+
+            if value <= 0:
+                continue
+            pIC50 = 9 - math.log10(value)
+
+            row["pIC50"] = pIC50
+            del row["IC50"]
+
+            rows.append(row)
+
+        newFieldnames = [f for f in fieldnames if f != "IC50"] + ["pIC50"]
+
+        with open(csvFile, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=newFieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
 
     def getpIC50Step(self):
         if self.type.get() == 0:
@@ -264,18 +428,6 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
             writer = csv.DictWriter(f, fieldnames=["name", "smiles", "pIC50"])
             writer.writeheader()
             writer.writerows(finalData)
-
-        script = "csvToSDF.py"
-        sdfFile = self._getExtraPath("qsar_dataset.sdf")
-        args = [os.path.abspath(csvFile), os.path.abspath(sdfFile)]
-
-        pwchemPlugin.runScript(
-            self,
-            script,
-            args,
-            env=RDKIT_DIC,
-            cwd=self._getPath(),
-            scriptDir=os.path.join(os.path.dirname(__file__), "../scripts"))
 
     def runLigPrepStep(self):
         inputSdf = self._getExtraPath("qsar_dataset.sdf")

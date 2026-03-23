@@ -158,7 +158,6 @@ class ProtSchrodingerQSAR(EMProtocol):
             fieldnames = reader.fieldnames
 
             for row in reader:
-                print(f'querying {row["smiles"]}')
                 name = row["name"]
                 smiles = row["smiles"]
                 url = "https://www.ebi.ac.uk/chembl/api/data/activity.json"
