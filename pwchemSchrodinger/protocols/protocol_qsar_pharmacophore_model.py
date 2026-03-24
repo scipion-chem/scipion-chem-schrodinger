@@ -64,12 +64,17 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
         form.addParam('input', EnumParam, label='Input source: ', default=0,
                       choices=['ChEMBL', 'SetOfSmallMolecules', 'CSV activity file'],
                       help='Choose whether to obtain molecules directly from ChEMBL or from a set.')
+        form.addParam('chemblInput', BooleanParam, label='Input IDs: ',
+                       default=True,
+                       help='INput specific CHEMBL IDs or select target type.')
         form.addParam('inputSmallMolecules', PointerParam, pointerClass="SetOfSmallMolecules",
                       label='Input small molecules:', condition='input==1',
                       help='Input small molecules to convert.')
-        form.addParam('type', EnumParam, label='Target type: ', default=0, condition='input==0',
+        form.addParam('type', EnumParam, label='Target type: ', default=0, condition='input==0 and chemblInput',
                       choices=['Kinases', 'GPCRs', 'Enzymes'],
                       help='Target type to build QSAR model.')
+        form.addParam('ids', StringParam, label='CHEMBL IDs: ', default='',
+                      help='Input full CHEMBL IDs separated by commas (eg. CHEMBL3927, CHEMBL325.')
         form.addParam('inputFile', FileParam, label="Activity file: ", condition='input==2',
                       help='CSV file with activity info. Each row should be a molecule with a column containing IC50 or pIC50 activity values in nM.')
 
@@ -337,12 +342,15 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
             writer.writerows(rows)
 
     def getpIC50Step(self):
-        if self.type.get() == 0:
-            targets = self.kinases
-        elif self.type.get() == 1:
-            targets = self.GPCRs
+        if self.chemblInput.get():
+            targets = [t.strip() for t in self.ids.get().split(",")]
         else:
-            targets = self.enzymes
+            if self.type.get() == 0:
+                targets = self.kinases
+            elif self.type.get() == 1:
+                targets = self.GPCRs
+            else:
+                targets = self.enzymes
 
         allResults = []
         for targetId in targets:
