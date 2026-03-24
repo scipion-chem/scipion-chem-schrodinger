@@ -64,17 +64,17 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
         form.addParam('input', EnumParam, label='Input source: ', default=0,
                       choices=['ChEMBL', 'SetOfSmallMolecules', 'CSV activity file'],
                       help='Choose whether to obtain molecules directly from ChEMBL or from a set.')
-        form.addParam('chemblInput', BooleanParam, label='Input IDs: ',
+        form.addParam('chemblInput', BooleanParam, label='Input IDs: ', condition='input==0',
                        default=True,
                        help='INput specific CHEMBL IDs or select target type.')
         form.addParam('inputSmallMolecules', PointerParam, pointerClass="SetOfSmallMolecules",
                       label='Input small molecules:', condition='input==1',
                       help='Input small molecules to convert.')
-        form.addParam('type', EnumParam, label='Target type: ', default=0, condition='input==0 and chemblInput',
+        form.addParam('type', EnumParam, label='Target type: ', default=0, condition='input==0 and not chemblInput',
                       choices=['Kinases', 'GPCRs', 'Enzymes'],
                       help='Target type to build QSAR model.')
-        form.addParam('ids', StringParam, label='CHEMBL IDs: ', default='',
-                      help='Input full CHEMBL IDs separated by commas (eg. CHEMBL3927, CHEMBL325.')
+        form.addParam('ids', StringParam, label='CHEMBL target IDs: ', default='', condition='input==0 and chemblInput',
+                      help='Input full CHEMBL target IDs separated by commas (eg. CHEMBL3927, CHEMBL325.')
         form.addParam('inputFile', FileParam, label="Activity file: ", condition='input==2',
                       help='CSV file with activity info. Each row should be a molecule with a column containing IC50 or pIC50 activity values in nM.')
 
