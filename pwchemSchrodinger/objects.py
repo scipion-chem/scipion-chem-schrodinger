@@ -194,10 +194,6 @@ class SchrodingerQSARModel(data.EMObject):
     def __init__(self, **kwargs):
         data.EMObject.__init__(self, **kwargs)
         self.modelFile = String()
-        self.summaryFile = String()
-        self.predictionsFile = String()
-        self.sdfFile = String()
-        self.fieldFile = String()
 
         self.style = String()
         self.forceField = String()

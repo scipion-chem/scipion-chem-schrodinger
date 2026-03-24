@@ -451,10 +451,6 @@ class ProtSchrodingerQSAR(EMProtocol):
         outDir = self._getPath("qsar_output")
 
         model = SchrodingerQSARModel(modelFile = os.path.join(outDir,"qsar_model.pharm"))
-        model.summaryFile.set(os.path.join(outDir, "qsar_summary.txt"))
-        model.predictionsFile.set(os.path.join(outDir, "qsar_results_pred.csv"))
-        model.sdfFile.set(os.path.join(outDir, "qsar_results.sdf"))
-        model.fieldFile.set(os.path.join(outDir, "qsar_field.csv"))
 
         style = self.style.get()
         ffNum = self.forceField.get()
