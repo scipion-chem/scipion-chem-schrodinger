@@ -232,7 +232,6 @@ class ProtSchrodingerQSARTest(EMProtocol):
         df["Title"] = df["Title"].astype(str).str.strip()
 
         activityMap = dict(zip(df["Title"], df["Activity"]))
-        print(activityMap)
 
         outMols = SetOfSmallMolecules().create(outputPath=self._getPath())
 
@@ -243,10 +242,7 @@ class ProtSchrodingerQSARTest(EMProtocol):
             molName = str(mol.getMolName()).strip()
             newMol.predictedActivity = Float()
 
-            print(f'---molName: {molName}')
-
             if molName in activityMap:
-                print('TRUE')
                 newMol.setAttributeValue('predictedActivity', activityMap[molName])
             outMols.append(newMol)
 
