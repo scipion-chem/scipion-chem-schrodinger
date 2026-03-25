@@ -450,7 +450,8 @@ class ProtSchrodingerQSAR(EMProtocol):
     def createOutputStep(self):
         outDir = self._getPath("qsar_output")
 
-        model = SchrodingerQSARModel(modelFile = os.path.join(outDir,"qsar_model.pharm"))
+        model = SchrodingerQSARModel()
+        model.setModelFile(os.path.join(outDir, "qsar_model.pharm"))
 
         style = self.style.get()
         ffNum = self.forceField.get()

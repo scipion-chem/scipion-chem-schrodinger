@@ -37,6 +37,8 @@ def csv_to_sdf(inputCsv, outputSdf, smilesCol="smiles", activityCol="pIC50"):
             print(f"Failed to generate 3D for row {idx} ({row[smilesCol]}): {e}")
             continue
 
+        molH.SetProp("_Name", str(row.get("name", f"mol_{idx}")))
+
         # Set activity property
         molH.SetProp(activityCol, str(row[activityCol]))
 
