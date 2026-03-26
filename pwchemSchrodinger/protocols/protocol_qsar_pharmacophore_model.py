@@ -37,7 +37,7 @@ from pwem.protocols import EMProtocol
 from pyworkflow.protocol.params import PointerParam, EnumParam, STEPS_PARALLEL, FloatParam, FileParam, StringParam, IntParam, BooleanParam
 
 # Scipion chem imports
-from pwchem.objects import SetOfSmallMolecules
+from pwchem.objects import SetOfSmallMolecules, PharmacophoreChem
 from pwchemSchrodinger.objects import SchrodingerQSARModel
 
 from pwchem.constants import RDKIT_DIC
@@ -66,7 +66,7 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
                       help='Choose whether to obtain molecules directly from ChEMBL or from a set.')
         form.addParam('chemblInput', BooleanParam, label='Input IDs: ', condition='input==0',
                        default=True,
-                       help='INput specific CHEMBL IDs or select target type.')
+                       help='Input specific CHEMBL IDs or select target type.')
         form.addParam('inputSmallMolecules', PointerParam, pointerClass="SetOfSmallMolecules",
                       label='Input small molecules:', condition='input==1',
                       help='Input small molecules to convert.')
@@ -590,26 +590,17 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
             waited += interval
 
     def createOutputStep(self):
-        outDir = self._getPath("qsar_output")
+        outZip = self._getExtraPath("phaseProject_build_qsar.zip")
+        outDir = self._getExtraPath("phaseProject_build_qsar")
+        os.makedirs(outDir, exist_ok=True)
+        with zipfile.ZipFile(outZip, 'r') as zip_ref:
+            zip_ref.extractall(outDir)
 
-        model = SchrodingerQSARModel(modelFile = os.path.join(outDir,"qsar_model.pharm"))
-        model.summaryFile.set(os.path.join(outDir, "qsar_summary.txt"))
-        model.predictionsFile.set(os.path.join(outDir, "qsar_pred.csv"))
-        model.sdfFile.set(os.path.join(outDir, "qsar_results.sdf"))
-        model.fieldFile.set(os.path.join(outDir, "qsar_field.csv"))
+        statsFile = os.path.join(outDir, "statistics.csv")
+        stats = pd.read_csv(statsFile)
 
-        style = self.style.get()
-        ffNum = self.forceField.get()
-        if ffNum == 0:
-            ff = 'OPLS_2005'
-        else:
-            ff = 'OPLS4'
-        model.style.set(style)
-        model.forceField.set(ff)
-        model.trainFraction.set(self.train.get())
-        model.lno.set(self.lno.get())
-
-        self._defineOutputs(SchrodingerQSARModel=model)
+        bestRow = stats.loc[stats['Q2'].idxmax()]
+        bestHypoID = str(bestRow['HypoID'])
 
 
 
