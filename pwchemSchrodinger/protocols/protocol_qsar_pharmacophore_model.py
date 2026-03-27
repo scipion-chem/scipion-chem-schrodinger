@@ -176,7 +176,7 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
         self._insertFunctionStep('createPhaseProjectStep')
         self._insertFunctionStep('createPharmacophoreDiscStep')
         self._insertFunctionStep('runPhaseQSARStep')
-        #self._insertFunctionStep('createOutputStep')
+        self._insertFunctionStep('createOutputStep')
 
     def createSdfStep(self):
         script = "csvToSDF.py"
@@ -601,6 +601,24 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
 
         bestRow = stats.loc[stats['Q2'].idxmax()]
         bestHypoID = str(bestRow['HypoID'])
+
+        model = SchrodingerQSARModel()
+        qsarDir = os.path.join(outDir, "qsar")
+
+        model.setModelFile(os.path.join(qsarDir, f"{bestHypoID}.qsar"))
+
+        style = self.style.get()
+        ffNum = self.forceField.get()
+        if ffNum == 0:
+            ff = 'OPLS_2005'
+        else:
+            ff = 'OPLS4'
+        model.style.set(style)
+        model.forceField.set(ff)
+        model.trainFraction.set(self.train.get())
+        model.lno.set(self.lno.get())
+
+        self._defineOutputs(SchrodingerQSARModel=model)
 
 
 
