@@ -585,7 +585,7 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
 
         while not os.path.exists(outputFile):
             if waited >= timeout:
-                raise RuntimeError(f"phase_build_qsar did not create expected file: {outputFile}")
+                raise RuntimeError(f"phase_build_qsar did not create expected file: {outputFile} - check project file log output for more details.")
             time.sleep(interval)
             waited += interval
 
@@ -619,8 +619,6 @@ class ProtSchrodingerQSARPharmacophore(EMProtocol):
         model.lno.set(self.lno.get())
 
         self._defineOutputs(SchrodingerQSARModel=model)
-
-
 
 
     # --------------------------- INFO functions -----------------------------------
