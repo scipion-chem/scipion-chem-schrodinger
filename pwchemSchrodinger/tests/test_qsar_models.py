@@ -55,7 +55,6 @@ class TestQSARModel(BaseTest):
         model = self._runQSARmodel()
         self.assertIsNotNone(getattr(model, 'SchrodingerQSARModel', None))
 
-#todo find more small molecules to test or smth
 class TestQSARModelTesting(TestQSARModel):
     @classmethod
     def setUpClass(cls):
@@ -67,7 +66,10 @@ class TestQSARModelTesting(TestQSARModel):
     def _runImportSmallMols(cls):
         cls.protImportSmallMols = cls.newProtocol(
             ProtChemImportSmallMolecules,
-            filesPath=cls.dsLig.getFile('*'), filesPattern='*')
+            defLibraries=True,
+            choicesLibraries=0,
+            choicesECBL=2
+        )
         cls.launchProtocol(cls.protImportSmallMols, wait=True)
 
     @classmethod
