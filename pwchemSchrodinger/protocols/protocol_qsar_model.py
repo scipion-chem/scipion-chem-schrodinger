@@ -62,7 +62,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                       help='Choose whether to obtain molecules directly from ChEMBL or from a set.')
         form.addParam('chemblInput', BooleanParam, label='Input IDs: ', condition='input==0',
                       default=True,
-                      help='INput specific CHEMBL IDs or select target type.')
+                      help='Input specific CHEMBL IDs or select target type.')
         form.addParam('inputSmallMolecules', PointerParam, pointerClass="SetOfSmallMolecules",
                       label='Input small molecules:', condition='input==1',
                       help='Input small molecules to convert.')
