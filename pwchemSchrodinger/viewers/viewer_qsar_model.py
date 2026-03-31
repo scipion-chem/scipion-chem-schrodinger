@@ -37,7 +37,7 @@ from ..viewers.viewers_data import MaestroView
 
 class ProtSchrodingerQSARViewer(pwviewer.ProtocolViewer):
     _label = 'Viewer Schrodinger QSAR'
-    _targets = [ProtSchrodingerQSAR, ProtSchrodingerQSARPharmacophore]
+    _targets = [ProtSchrodingerQSAR]
 
     def __init__(self, **args):
         super().__init__(**args)

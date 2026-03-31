@@ -38,5 +38,4 @@ from .protocol_qikprop import ProtSchrodingerQikprop
 from .protocol_mm_gbsa import ProtSchrodingerMMGBSA
 from .protocol_induced_fit_docking import ProtSchrodingerIFD
 from .protocol_qsar_model import ProtSchrodingerQSAR
-from .protocol_qsar_pharmacophore_model import ProtSchrodingerQSARPharmacophore
 from .protocol_test_qsar_model import ProtSchrodingerQSARTest

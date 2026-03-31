@@ -46,12 +46,13 @@ from pwchem import Plugin as pwchemPlugin
 from .. import Plugin as schrodingerPlugin
 
 class ProtSchrodingerQSAR(EMProtocol):
-    """Create field-based QSAR model"""
-    _label = 'field-based QSAR model'
+    """Create QSAR model"""
+    _label = 'QSAR model'
 
     kinases = ['CHEMBL203', 'CHEMBL1862', 'CHEMBL2971', 'CHEMBL279', 'CHEMBL240']
     GPCRs = ['CHEMBL251', 'CHEMBL210', 'CHEMBL228']
     enzymes = ['CHEMBL204', 'CHEMBL325', 'CHEMBL3927']
+    style = ['ff', 'ff_s', 'ff_e', 'qm_e', 'gauss_s', 'gauss_e', 'gauss_h', 'gauss_a', 'gauss_d', 'gauss', 'gauss_r', 'gauss_ext']
 
 
     def _defineParams(self, form):
@@ -76,7 +77,13 @@ class ProtSchrodingerQSAR(EMProtocol):
 
         form.addParam('actFilter', FloatParam, label='Activity threshold: ', default=0.0,
                       help='Keep molecules with activity over threshold value.')
-        form.addParam('style', StringParam, label='Fields: ', default='ff',
+
+        form.addParam('qsarModel', EnumParam, label='Type of QSAR model: ',
+                      choices=['field-based QSAR', 'pharmacophore QSAR'],
+                      default=0,
+                      help='Choose whether to create a conventional QSAR model or a pharmacophore QSAR.')
+
+        form.addParam('style', StringParam, label='Fields: ', default='ff', condition='qsarModel==0',
                       help='Fields to include (can be more than one): \n'
                            '- ff: all force fields\n'
                            '- ff_s: force field steric (Lennar-Jones)\n'
@@ -90,19 +97,19 @@ class ProtSchrodingerQSAR(EMProtocol):
                            '- gauss: all above gaussian fields\n'
                            '- gauss_r: gaussian aromatic ring\n'
                            '- gauss_ext: gauss + gauss_r')
-        form.addParam('forceField', EnumParam, label='Force field: ', default=1,
+        form.addParam('forceField', EnumParam, label='Force field: ', default=1,condition='qsarModel==0',
                       choices=['OPLS_2005', 'OPLS4'],
                       help='Force field from which to draw atom based parameters.')
-        form.addParam('train', FloatParam, label='Training partition: ', default=0.8,
+        form.addParam('train', FloatParam, label='Training partition: ', default=0.8,condition='qsarModel==0',
                       help='Partition of train set.')
-        form.addParam('lno', IntParam, label='Leave-n-out cross-validation: ', default=10,
+        form.addParam('lno', IntParam, label='Leave-n-out cross-validation: ', default=10,condition='qsarModel==0',
                       help='Number of training set observations to exclude for cross-validation.\n'
                            'Guidelines:\n'
                            '- small datasets (<20 mols): 1\n'
                            '- medium datasets (20-100 mols): 5-10\n'
                            '- large datasets (>100 mols): 10')
 
-        group = form.addGroup('Grid and FF params')
+        group = form.addGroup('Grid and FF params', condition='qsarModel==0')
         group.addParam('grid', FloatParam, label='Grid spacing (Å):', default=1.0,
                        help='Spacing of field points in angstroms (0.5–4.0)')
         group.addParam('extend', FloatParam, label='Grid extension (Å):', default=3.0,
@@ -119,6 +126,87 @@ class ProtSchrodingerQSAR(EMProtocol):
                        expertLevel=LEVEL_ADVANCED,
                        help='Ignore fields if standard deviation over training set is less than this')
 
+        group = form.addGroup('Molecule preparation params',condition='qsarModel==1')
+        group.addParam('epik', EnumParam, label='Epik version: ', choices=['Classic', 'Modern'],
+                       default=1,
+                       help='Epik version to use for ionization.')
+        group.addParam('ph', FloatParam, label='Target pH: ', default=7.4,
+                       help='Effective/target pH.')
+        group.addParam('phTolerance', FloatParam, label='pH tolerance: ', default=1.0,
+                       help='pH tolerance for generated structures.')
+        group.addParam('emb', BooleanParam, label='Epik metal binding: ', expertLevel=LEVEL_ADVANCED,
+                       default=False,
+                       help='Run Epik with the metal_binding option so that states appropriate for interactions with metal ions in protein binding pockets are also generated.')
+        group.addParam('stereoisomers', IntParam, label='Number of stereoisomers: ', default=32,
+                       help='Generate up to this many stereoisomers per input structure.')
+        group.addParam('chirality', BooleanParam, label='Respect chirality: ',
+                       default=True,
+                       help=' Respect chiralities from input geometry when generating stereoisomers.')
+        group.addParam('forceFieldLig', EnumParam, label='Force field: ', default=0,
+                       choices=['OPLS_2005', 'S-OPLS'],  # 0=14, 1=16
+                       help=' Force-field to be used for the final geometry optimization.')
+
+        group = form.addGroup('Phase project params',condition='qsarModel==1')
+        group.addParam('active', FloatParam, label='Active threshold: ', default=7.0,
+                       help='Good binders with pIC50>=*threshold*.')
+        group.addParam('inactive', FloatParam, label='Inactive threshold: ', default=5.5,
+                       help='Bad binders with pIC50<=*threshold*.')
+        group.addParam('repr', IntParam, label='Number of representatives: ', default=30,
+                       help='How many actives to keep as representatives.')
+
+        group = form.addGroup('Pharmacophore discovery params',condition='qsarModel==1')
+        group.addParam('sites', StringParam, label='Pharmacophore size: ', default='4:6',
+                       help='Search each reference ligand for common pharmacophores containing between <min> and <max> sites. The legal range is 3:7. The actual searchproceeds from <max> down to <min>, and halts before reaching <min> if common pharmacophores containing more than <min> sites are found. Use -ex to force the full range to be considered. This procedure is followed independently for each reference ligand conformer, so it is still possible to obtain common pharmacophores that contain different numbers of sites even if -ex is not used.')
+        group.addParam('miss', IntParam, label='Maximum misses (flexibility): ', default=1,
+                       help=('Maximum number of actives that can be missed during pharmacophore generation.\n'
+                             'The algorithm starts with strict matching (no misses) and gradually relaxes the constraint\n'
+                             'until this value is reached.\n\n'
+                             'Higher values = more flexible models (less strict).'))
+        group.addParam('keep', IntParam, label='Hypotheses per site: ', default=10,
+                       help='Maximum number of hypotheses to retain for each number of sites.')
+        group.addParam('ex', BooleanParam, label='Full range of sites: ',
+                       default=False,
+                       help='Consider the full range of sites, from <max> to <min>')
+
+        group.addParam('redun', FloatParam, label='Redundancy: ', default=0.25, expertLevel=LEVEL_ADVANCED,
+                       help='Site point positional difference for elimination of redundant pharmacophores.')
+        group.addParam('site', FloatParam, label='Site score weight: ', default=1, expertLevel=LEVEL_ADVANCED,
+                       help='Site score weight to use when computing Survival score.')
+        group.addParam('vect', FloatParam, label='Vector score weight: ', default=1, expertLevel=LEVEL_ADVANCED,
+                       help='Vector score weight to use when computing Survival score.')
+        group.addParam('vol', FloatParam, label='Volume score weight: ', default=1, expertLevel=LEVEL_ADVANCED,
+                       help='Volume score weight to use when computing Survival score.')
+        group.addParam('select', FloatParam, label='Selectivity score weight: ', default=1, expertLevel=LEVEL_ADVANCED,
+                       help='Selectivity score weight to use when computing Survival score.')
+
+        group = form.addGroup('QSAR model params',condition='qsarModel==1')
+        group.addParam('hypos', IntParam, label='Top N hypothesis: ', default=1,
+                       help='Top N hypothesis to consider.')
+        group.addParam('stylePharm', EnumParam, label='Style: ', choices=['atom', 'pharmacophore'],
+                       default=0,
+                       help='Indicates whether models should be created from atoms or pharmacophore sites.')
+        group.addParam('lno', IntParam, label='Leave-n-out cross-validation: ', default=10,
+                       help='Number of training set observations to exclude for cross-validation.\n'
+                            'Guidelines:\n'
+                            '- small datasets (<20 mols): 1\n'
+                            '- medium datasets (20-100 mols): 5-10\n'
+                            '- large datasets (>100 mols): 10')
+        group.addParam('grid', FloatParam, label='Grid spacing (Å):', default=1.0,
+                       help='Spacing of field points in angstroms (0.5–4.0)')
+        group.addParam('tvalue', FloatParam, label='T-value: ', default=2.00, expertLevel=LEVEL_ADVANCED,
+                       help=' Eliminate a volume occupation bit if its absolute t-value'
+                            'is less than <tmin>. The t-value is a measure of a'
+                            'variables statistical significance, and its defined as'
+                            'b/bse, where b is the associated regression coefficient,'
+                            'and bse is the standard error in the coefficient')
+        group.addParam('atypes', BooleanParam, label='Use atom types: ',
+                       default=False, expertLevel=LEVEL_ADVANCED,
+                       help=' When determining the best ligand alignments, compute'
+                            'volume scores using overlap only between atoms of the'
+                            'same MacroModel type. This favors alignments that'
+                            'superimpose chemically similar atoms.')
+
+        form.addParallelSection(threads=4, mpi=1)
 
     # --------------------------- INSERT steps functions --------------------
     def _insertAllSteps(self):
@@ -129,8 +217,16 @@ class ProtSchrodingerQSAR(EMProtocol):
         else:
             self._insertFunctionStep('checkActivityStep')
         self._insertFunctionStep('createSdfStep')
-        self._insertFunctionStep('runPhaseQSARStep')
-        self._insertFunctionStep('createOutputStep')
+
+        if (self.qsarModel.get() == 0):
+            self._insertFunctionStep('runPhaseQSARStep')
+            self._insertFunctionStep('createOutputStep')
+        else:
+            self._insertFunctionStep('runLigPrepStep')
+            self._insertFunctionStep('createPhaseProjectStep')
+            self._insertFunctionStep('createPharmacophoreDiscStep')
+            self._insertFunctionStep('runPhaseQSARStepPharm')
+            self._insertFunctionStep('createOutputStepPharm')
 
     def extractpIC50Step(self):
         inputSet = self.inputSmallMolecules.get()
@@ -452,6 +548,10 @@ class ProtSchrodingerQSAR(EMProtocol):
 
         model = SchrodingerQSARModel()
         model.setModelFile(os.path.join(outDir, "qsar_model.pharm"))
+        model.summaryFile.set(os.path.join(outDir, "qsar_summary.txt"))
+        model.predictionsFile.set(os.path.join(outDir, "qsar_results_pred.csv"))
+        model.sdfFile.set(os.path.join(outDir, "qsar_results.sdf"))
+        model.fieldFile.set(os.path.join(outDir, "qsar_field.csv"))
 
         style = self.style.get()
         ffNum = self.forceField.get()
@@ -465,6 +565,185 @@ class ProtSchrodingerQSAR(EMProtocol):
         model.lno.set(self.lno.get())
 
         self._defineOutputs(SchrodingerQSARModel=model)
+
+    def runLigPrepStep(self):
+        inputSdf = self._getExtraPath("qsar_dataset.sdf")
+        outputFile = ("ligprep.maegz")
+
+        prog = schrodingerPlugin.getHome("ligprep")
+
+        args = [
+            "-isd", os.path.abspath(inputSdf),
+            "-omae", (outputFile)
+        ]
+
+        if self.epik.get() == 0: epik = '-epik'
+        else: epik = '-epikx'
+        args.append(epik)
+        args.extend(['-ph', self.ph.get(), '-pht', self.phTolerance.get()])
+        if self.emb.get(): args.append('-emb')
+        if self.chirality.get(): args.append('-g')
+        args.extend(['-s', self.stereoisomers.get()])
+        if self.forceFieldLig.get() == 0: ff = 14
+        else: ff = 16
+        args.extend(['-bff', ff])
+
+        args.extend(['-NJOBS', self.numberOfThreads.get()])
+        args.extend(['-HOST', 'localhost'])
+
+        self.runJob(prog, args, cwd=self._getExtraPath())
+
+        timeout = 800
+        waited = 0
+        interval = 2
+
+        while not os.path.exists(os.path.join(self._getExtraPath(), outputFile)):
+            if waited >= timeout:
+                raise RuntimeError(f"LigPrep did not create expected file: {outputFile}")
+            time.sleep(interval)
+            waited += interval
+
+    def createPhaseProjectStep(self):
+        ligFile = self._getExtraPath("ligprep.maegz")
+        projectFile = self._getExtraPath("phaseProject.phprj")
+
+        prog = schrodingerPlugin.getHome("utilities/phase_project")
+        # import ligands
+        args = [
+            os.path.abspath(projectFile),
+            'import',
+            '-i', os.path.abspath(ligFile),
+            '-new',
+            '-act', 'pIC50'
+        ]
+        self.runJob(prog, args, cwd=self._getExtraPath())
+
+        # define active/inactive
+        args = [
+            os.path.abspath(projectFile),
+            'revise',
+            '-active', self.active.get(),
+            '-inactive', self.inactive.get(),
+            '-commit'
+        ]
+        self.runJob(prog, args, cwd=self._getExtraPath())
+
+        # reduce actives
+        args = [
+            os.path.abspath(projectFile),
+            'revise',
+            '-repr', self.repr.get(),
+            '-commit'
+        ]
+        self.runJob(prog, args, cwd=self._getExtraPath())
+
+        # create pharmacophore sites
+        args = [
+            os.path.abspath(projectFile),
+            'revise',
+            '-sites'
+        ]
+        self.runJob(prog, args, cwd=self._getExtraPath())
+
+        # export to phzip
+        args = [os.path.abspath(projectFile), 'archive']
+        self.runJob(prog, args, cwd=self._getExtraPath())
+
+    def createPharmacophoreDiscStep(self):
+        projectFile = self._getExtraPath("phaseProject.phzip")
+        baseName = os.path.splitext(os.path.basename(projectFile))[0]
+        outputFile = self._getExtraPath(f"{baseName}_find_common.zip")
+
+        prog = schrodingerPlugin.getHome("phase_find_common")
+        args = [
+            os.path.abspath(projectFile),
+            '-LOCAL',
+            '-HOST', 'localhost',
+            '-sites', self.sites.get(),
+            '-miss', self.miss.get(),
+            '-keep', self.keep.get(),
+            '-redun', self.redun.get(),
+            '-site', self.site.get(),
+            '-vect', self.vect.get(),
+            '-vol', self.vol.get(),
+            '-select', self.select.get()
+        ]
+        if self.ex.get(): args.append('-ex')
+        self.runJob(prog, args, cwd=self._getExtraPath())
+
+        timeout = 800
+        waited = 0
+        interval = 2
+
+        while not os.path.exists(outputFile):
+            if waited >= timeout:
+                raise RuntimeError(f"phase_find_common did not create expected file: {outputFile}")
+            time.sleep(interval)
+            waited += interval
+
+    def runPhaseQSARStepPharm(self):
+        projectFile = self._getExtraPath("phaseProject.phzip")
+        baseName = os.path.splitext(os.path.basename(projectFile))[0]
+        outputFile = self._getExtraPath(f"{baseName}_build_qsar.zip")
+
+        prog = schrodingerPlugin.getHome("phase_build_qsar")
+        st = self.stylePharm.get()
+        if st == 0: style = 'atom'
+        else: style = 'pharm'
+        args = [
+            os.path.abspath(projectFile),
+            '-LOCAL',
+            '-WAIT',
+            '-HOST', 'localhost',
+            '-style', style,
+            '-LNO', self.lno.get(),
+            '-grid', self.grid.get(),
+            '-tvalue', self.tvalue.get()
+        ]
+        if self.atypes.get(): args.append('-atypes')
+        self.runJob(prog, args, cwd=self._getExtraPath())
+
+        timeout = 7200 #2h
+        waited = 0
+        interval = 5
+
+        while not os.path.exists(outputFile):
+            if waited >= timeout:
+                raise RuntimeError(f"phase_build_qsar did not create expected file: {outputFile} - check project file log output for more details.")
+            time.sleep(interval)
+            waited += interval
+
+    def createOutputStepPharm(self):
+        outZip = self._getExtraPath("phaseProject_build_qsar.zip")
+        outDir = self._getExtraPath("phaseProject_build_qsar")
+        os.makedirs(outDir, exist_ok=True)
+        with zipfile.ZipFile(outZip, 'r') as zip_ref:
+            zip_ref.extractall(outDir)
+
+        statsFile = os.path.join(outDir, "statistics.csv")
+        stats = pd.read_csv(statsFile)
+
+        bestRow = stats.loc[stats['Q2'].idxmax()]
+        bestHypoID = str(bestRow['HypoID'])
+
+        model = SchrodingerQSARModel()
+        qsarDir = os.path.join(outDir, "qsar")
+
+        model.setModelFile(os.path.join(qsarDir, f"{bestHypoID}.qsar"))
+
+        style = self.style.get()
+        ffNum = self.forceField.get()
+        if ffNum == 0:
+            ff = 'OPLS_2005'
+        else:
+            ff = 'OPLS4'
+        model.style.set(style)
+        model.forceField.set(ff)
+        model.trainFraction.set(self.train.get())
+        model.lno.set(self.lno.get())
+
+        self._defineOutputs(SchrodingerQSARModel=model)
+
 
 
     # --------------------------- INFO functions -----------------------------------
