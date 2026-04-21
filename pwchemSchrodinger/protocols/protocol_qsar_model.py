@@ -25,9 +25,14 @@
 # **************************************************************************
 # General imports
 import csv
+import glob
+import warnings
+import zipfile
+
 import requests
 import math
 import time
+import pandas as pd
 import os, subprocess, shutil
 
 # Scipion em imports
@@ -64,7 +69,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         form.addParam('chemblInput', BooleanParam, label='Input IDs: ', condition='input==0',
                       default=True,
                       help='Input specific CHEMBL IDs or select target type.')
-        form.addParam('inputSmallMolecules', PointerParam, pointerClass="SetOfSmallMolecules",
+        form.addParam('inputSmallMolecules', PointerParam, pointerClass="SetOfSmallMolecules, PharmacophoreChem", #todo add to pharmacophores?
                       label='Input small molecules:', condition='input==1',
                       help='Input small molecules to convert.')
         form.addParam('type', EnumParam, label='Target type: ', default=0, condition='input==0 and not chemblInput',
@@ -180,8 +185,8 @@ class ProtSchrodingerQSAR(EMProtocol):
                        help='Selectivity score weight to use when computing Survival score.')
 
         group = form.addGroup('QSAR model params',condition='qsarModel==1')
-        group.addParam('hypos', IntParam, label='Top N hypothesis: ', default=1,
-                       help='Top N hypothesis to consider.')
+        group.addParam('hypos', BooleanParam, label='Keep only best hypothesis: ', default=True,
+                       help='Keep only model built form the best hypothesis.')
         group.addParam('stylePharm', EnumParam, label='Style: ', choices=['atom', 'pharmacophore'],
                        default=0,
                        help='Indicates whether models should be created from atoms or pharmacophore sites.')
@@ -546,7 +551,13 @@ class ProtSchrodingerQSAR(EMProtocol):
     def createOutputStep(self):
         outDir = self._getPath("qsar_output")
 
+        if self.qsarModel.get() == 0:
+            qsarModel = 'Field'
+        else:
+            qsarModel = 'Pharm'
+
         model = SchrodingerQSARModel()
+        model.qsarModel.set(qsarModel)
         model.setModelFile(os.path.join(outDir, "qsar_model.pharm"))
         model.summaryFile.set(os.path.join(outDir, "qsar_summary.txt"))
         model.predictionsFile.set(os.path.join(outDir, "qsar_results_pred.csv"))
@@ -593,7 +604,7 @@ class ProtSchrodingerQSAR(EMProtocol):
 
         self.runJob(prog, args, cwd=self._getExtraPath())
 
-        timeout = 800
+        timeout = 3600 #1h
         waited = 0
         interval = 2
 
@@ -671,7 +682,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         if self.ex.get(): args.append('-ex')
         self.runJob(prog, args, cwd=self._getExtraPath())
 
-        timeout = 800
+        timeout = 3600
         waited = 0
         interval = 2
 
@@ -685,6 +696,20 @@ class ProtSchrodingerQSAR(EMProtocol):
         projectFile = self._getExtraPath("phaseProject.phzip")
         baseName = os.path.splitext(os.path.basename(projectFile))[0]
         outputFile = self._getExtraPath(f"{baseName}_build_qsar.zip")
+
+        prog_project = schrodingerPlugin.getHome("utilities/phase_project")
+        cleanup_args = [
+            "phaseProject.phprj",
+            "find",
+            "-cleanup", "phaseProject",
+            "-force"
+        ]
+        self.runJob(prog_project, cleanup_args, cwd=self._getExtraPath())
+
+        extraDir = self._getExtraPath()
+        projectPath = "phaseProject.phprj"
+        archive_args = [projectPath, "archive", "-force"]
+        self.runJob(prog_project, archive_args, cwd=extraDir)
 
         prog = schrodingerPlugin.getHome("phase_build_qsar")
         st = self.stylePharm.get()
@@ -715,40 +740,79 @@ class ProtSchrodingerQSAR(EMProtocol):
 
     def createOutputStepPharm(self):
         outZip = self._getExtraPath("phaseProject_build_qsar.zip")
-        outDir = self._getExtraPath("phaseProject_build_qsar")
+        projectPath = self._getExtraPath("phaseProject.phprj")
+        outDir = self._getExtraPath()
+        resultFolder = os.path.join(outDir, "phaseProject_build_qsar/qsar")
         os.makedirs(outDir, exist_ok=True)
         with zipfile.ZipFile(outZip, 'r') as zip_ref:
             zip_ref.extractall(outDir)
 
-        statsFile = os.path.join(outDir, "statistics.csv")
+        statsFile = os.path.join(outDir, "phaseProject_build_qsar/statistics.csv")
         stats = pd.read_csv(statsFile)
 
-        bestRow = stats.loc[stats['Q2'].idxmax()]
-        bestHypoID = str(bestRow['HypoID'])
+        if self.hypos.get():
+            bestRow = stats.loc[stats['Q^2'].idxmax()]
+            bestHypoID = str(bestRow['HypoID'])
 
-        model = SchrodingerQSARModel()
-        qsarDir = os.path.join(outDir, "qsar")
+            model = SchrodingerQSARModel()
+            model.projectPath.set(projectPath)
+            model.setModelFile(os.path.join(resultFolder, f"{bestHypoID}.qsar"))
 
-        model.setModelFile(os.path.join(qsarDir, f"{bestHypoID}.qsar"))
+            searchPattern = os.path.join(resultFolder,  "*_pred.csv")
+            predFiles = glob.glob(searchPattern)
+            model.predictionsFile.set(predFiles[0])
 
-        style = self.style.get()
-        ffNum = self.forceField.get()
-        if ffNum == 0:
-            ff = 'OPLS_2005'
+            style = self.style.get()
+            ffNum = self.forceField.get()
+            if ffNum == 0:
+                ff = 'OPLS_2005'
+            else:
+                ff = 'OPLS4'
+            model.style.set(style)
+            model.forceField.set(ff)
+            model.trainFraction.set(self.train.get())
+            model.lno.set(self.lno.get())
+
+            self._defineOutputs(SchrodingerQSARModel=model)
         else:
-            ff = 'OPLS4'
-        model.style.set(style)
-        model.forceField.set(ff)
-        model.trainFraction.set(self.train.get())
-        model.lno.set(self.lno.get())
+            outputs = {}
+            for _, row in stats.iterrows():
+                hypoID = str(row['HypoID'])
 
-        self._defineOutputs(SchrodingerQSARModel=model)
+                modelName = f"model_{hypoID}"
+
+                qsarPath = os.path.join(resultFolder, f"{hypoID}.qsar")
+                predPath = os.path.join(resultFolder, f"{hypoID}_pred.csv")
+
+                if not os.path.exists(qsarPath):
+                    continue
+
+                model = SchrodingerQSARModel()
+                model.projectPath.set(projectPath)
+                model.setModelFile(qsarPath)
+
+                if os.path.exists(predPath):
+                    model.predictionsFile.set(predPath)
+
+                style = self.style.get()
+                ffNum = self.forceField.get()
+                ff = 'OPLS_2005' if ffNum == 0 else 'OPLS4'
+
+                model.style.set(style)
+                model.forceField.set(ff)
+                model.trainFraction.set(self.train.get())
+                model.lno.set(self.lno.get())
+
+                outputs[modelName] = model
+
+            self._defineOutputs(**outputs)
 
 
 
     # --------------------------- INFO functions -----------------------------------
     def _summary(self):
-        summary=[]
+        summary = [
+           ]
         return summary
 
     def _methods(self):

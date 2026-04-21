@@ -193,6 +193,8 @@ class SchrodingerQSARModel(data.EMObject):
 
     def __init__(self, **kwargs):
         data.EMObject.__init__(self, **kwargs)
+        self.qsarModel = String()
+        self.projectPath = String() #used only with pharmacophore models
         self.modelFile = String()
         self.summaryFile = String()
         self.predictionsFile = String()
