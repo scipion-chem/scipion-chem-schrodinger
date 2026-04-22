@@ -69,7 +69,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         form.addParam('chemblInput', BooleanParam, label='Input IDs: ', condition='input==0',
                       default=True,
                       help='Input specific CHEMBL IDs or select target type.')
-        form.addParam('inputSmallMolecules', PointerParam, pointerClass="SetOfSmallMolecules, PharmacophoreChem", #todo add to pharmacophores?
+        form.addParam('inputSmallMolecules', PointerParam, pointerClass="SetOfSmallMolecules,",
                       label='Input small molecules:', condition='input==1',
                       help='Input small molecules to convert.')
         form.addParam('type', EnumParam, label='Target type: ', default=0, condition='input==0 and not chemblInput',
