@@ -195,10 +195,11 @@ class SchrodingerQSARModel(data.EMObject):
         data.EMObject.__init__(self, **kwargs)
         self.qsarModel = String()
         self.projectPath = String() #used only with pharmacophore models
+        self.hypoFile = String() #used only with pharmacophore models
         self.modelFile = String()
         self.summaryFile = String()
         self.predictionsFile = String()
-        self.sdfFile = String()
+        self.molFile = String()
         self.fieldFile = String()
 
         self.style = String()
@@ -211,5 +212,6 @@ class SchrodingerQSARModel(data.EMObject):
 
     def getModelFile(self):
         return self.modelFile.get()
+
 
 

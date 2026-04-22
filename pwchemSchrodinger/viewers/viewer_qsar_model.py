@@ -42,13 +42,21 @@ class ProtSchrodingerQSARViewer(pwviewer.ProtocolViewer):
     def __init__(self, **args):
         super().__init__(**args)
 
+    def showHypo(self, group):
+        group.addParam('displayHypo',
+                       params.LabelParam,
+                       label='Open hypothesis in Maestro',
+                       help='Display the hypothesis file in Maestro GUI.')
+
     def _defineParams(self, form):
         form.addSection(label='Visualization of QSAR model')
         group = form.addGroup('Open Maestro GUI')
         group.addParam('displaySDF',
                        params.LabelParam,
                        label='Open molecules in Maestro',
-                       help='Display the SDF file in Maestro GUI.')
+                       help='Display the molecules file in Maestro GUI.')
+        if (self.protocol.SchrodingerQSARModel).qsarModel.get() == 'Pharm':
+            self.showHypo(group)
 
         group = form.addGroup('Plots')
         group.addParam('displayPredictions',
@@ -56,21 +64,36 @@ class ProtSchrodingerQSARViewer(pwviewer.ProtocolViewer):
                        label='Plot predictions vs experimental',
                        help='Generate and display a scatter plot.')
 
+
+
     def _getVisualizeDict(self):
         visDic = super()._getVisualizeDict()
-        visDic.update({
-            'displaySDF': self._viewSDFMaestro,
-            'displayPredictions': self._viewPredictionsPlot
-        })
+        if (self.protocol.SchrodingerQSARModel).qsarModel.get() == 'Pharm':
+            visDic.update({
+                'displaySDF': self._viewSDFMaestro,
+                'displayPredictions': self._viewPredictionsPlot,
+                'displayHypo': self._viewHypoMaestro
+            })
+        else:
+            visDic.update({
+                'displaySDF': self._viewSDFMaestro,
+                'displayPredictions': self._viewPredictionsPlot
+            })
         return visDic
 
     def _viewSDFMaestro(self, paramName=None):
         model = self.protocol.SchrodingerQSARModel
 
-        sdfFile = model.sdfFile.get()
-        print(sdfFile)
+        molFile = model.molFile.get()
 
-        return [MaestroView(f'{sdfFile}')]
+        return [MaestroView(f'{molFile}')]
+
+    def _viewHypoMaestro(self, paramName=None):
+        model = self.protocol.SchrodingerQSARModel
+
+        hypoFile = model.hypoFile.get()
+
+        return [MaestroView(f'{hypoFile}')]
 
     def _viewPredictionsPlot(self, paramName=None):
         import pandas as pd

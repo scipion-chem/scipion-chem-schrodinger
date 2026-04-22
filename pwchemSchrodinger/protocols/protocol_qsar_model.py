@@ -45,7 +45,7 @@ from pyworkflow.protocol.params import PointerParam, EnumParam, STEPS_PARALLEL, 
 from pwchem.objects import SetOfSmallMolecules
 from pwchemSchrodinger.objects import SchrodingerQSARModel
 
-from pwchem.constants import RDKIT_DIC
+from pwchem.constants import RDKIT_DIC, OPENBABEL_DIC
 from pwchem import Plugin as pwchemPlugin
 
 from .. import Plugin as schrodingerPlugin
@@ -483,8 +483,8 @@ class ProtSchrodingerQSAR(EMProtocol):
     def createSdfStep(self):
         script = "csvToSDF.py"
         csvFile = self._getExtraPath("qsar_dataset.csv")
-        sdfFile = self._getExtraPath("qsar_dataset.sdf")
-        args = [os.path.abspath(csvFile), os.path.abspath(sdfFile)]
+        molFile = self._getExtraPath("qsar_dataset.sdf")
+        args = [os.path.abspath(csvFile), os.path.abspath(molFile)]
 
         pwchemPlugin.runScript(
             self,
@@ -548,18 +548,14 @@ class ProtSchrodingerQSAR(EMProtocol):
 
     def createOutputStep(self):
         outDir = self._getPath("qsar_output")
-
-        if self.qsarModel.get() == 0:
-            qsarModel = 'Field'
-        else:
-            qsarModel = 'Pharm'
+        qsarModel = 'Field'
 
         model = SchrodingerQSARModel()
         model.qsarModel.set(qsarModel)
         model.setModelFile(os.path.join(outDir, "qsar_model.pharm"))
         model.summaryFile.set(os.path.join(outDir, "qsar_summary.txt"))
         model.predictionsFile.set(os.path.join(outDir, "qsar_results_pred.csv"))
-        model.sdfFile.set(os.path.join(outDir, "qsar_results.sdf"))
+        model.molFile.set(os.path.join(outDir, "qsar_results.sdf"))
         model.fieldFile.set(os.path.join(outDir, "qsar_field.csv"))
 
         style = self.style.get()
@@ -757,12 +753,17 @@ class ProtSchrodingerQSAR(EMProtocol):
         bestHypoID = str(bestRow['HypoID'])
 
         model = SchrodingerQSARModel()
+        qsarModel = 'Pharm'
+        model.qsarModel.set(qsarModel)
         model.projectPath.set(projectPath)
         model.setModelFile(os.path.join(resultFolder, f"{bestHypoID}.qsar"))
 
-        searchPattern = os.path.join(resultFolder,  "*_pred.csv")
-        predFiles = glob.glob(searchPattern)
-        model.predictionsFile.set(predFiles[0])
+        predFile = os.path.join(resultFolder,  f"{bestHypoID}_pred.csv")
+        model.predictionsFile.set(predFile)
+        molFile = os.path.join(resultFolder, f"{bestHypoID}_pred.maegz")
+        model.molFile.set(molFile)
+        hypoFile = os.path.join(resultFolder, f"{bestHypoID}.phypo")
+        model.hypoFile.set(hypoFile)
 
         style = self.style.get()
         ffNum = self.forceField.get()
@@ -796,3 +797,45 @@ class ProtSchrodingerQSAR(EMProtocol):
     def _warnings(self):
         warnings = []
         return warnings
+
+    # --------------------------- UTILS functions -----------------------------------
+
+    def getSMI(self, fnSmall):
+        fnRoot, ext = os.path.splitext(os.path.basename(fnSmall))
+        print("Extension:", ext)
+
+        if ext != '.smi':
+            outDir = os.path.abspath(self._getExtraPath())
+            fnOut = os.path.abspath(self._getExtraPath(fnRoot + '.smi'))
+
+            args = f' -i "{fnSmall}" -of smi -o {fnOut} --outputDir {outDir}'
+
+            if fnSmall.endswith(".pdbqt") or fnSmall.endswith(".mol2"):
+                envDic, scriptName = OPENBABEL_DIC, 'obabel_IO.py'
+            else:
+                envDic, scriptName = RDKIT_DIC, 'rdkit_IO.py'
+
+            fullProgram = (
+                f'{Plugin.getEnvActivationCommand(envDic)} '
+                f'&& python {Plugin.getScriptsDir(scriptName)} '
+            )
+
+            insistentRun(self, fullProgram, args, envDic=envDic, cwd=outDir)
+
+            if not os.path.exists(fnOut):
+                print(f"SMILES conversion failed for {fnSmall}")
+                return None
+
+        else:
+            fnOut = fnSmall
+
+        return self.parseSMI(fnOut)
+
+    def parseSMI(self, smiFile):
+        smi = None
+        with open(smiFile) as f:
+            for line in f:
+                smi = line.split()[0].strip()
+                if smi.lower() != 'smiles':
+                    break
+        return smi
