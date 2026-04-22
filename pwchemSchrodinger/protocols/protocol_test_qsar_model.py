@@ -49,7 +49,8 @@ from .. import Plugin as schrodingerPlugin
 class ProtSchrodingerQSARTest(EMProtocol):
     """Test QSAR models"""
     _label = 'test QSAR model'
-
+    filters = ['stereo', 'connect', 'distinct']
+    samples = ['rapid', 'thorough', 'rdkit']
 
     def _defineParams(self, form):
         form.addSection(label='Input')
@@ -57,20 +58,62 @@ class ProtSchrodingerQSARTest(EMProtocol):
         form.addParam('model', PointerParam, pointerClass="SchrodingerQSARModel",
                       label='Model: ',
                       help='Model to use for testing.')
+        form.addParam('pharmModel', BooleanParam, label='Pharmacophore QSAR model: ',
+                       default=False,
+                       help='Whether the input model is pharmacophore-based.')
 
         form.addParam('inputSmallMolecules', PointerParam, pointerClass="SetOfSmallMolecules",
                       label='Input small molecules:',
                       help='Input small molecules to convert.')
 
+        group = form.addGroup('Filtering params', condition='pharmModel')
+        group.addParam('filter', EnumParam, label='Molecule grouping: ', choices=self.filters,
+                       default=0,
+                       help='How to group molecules: \n'
+                            '-distinct             Treat each structure as a distinct molecule (i.e., one conformer only). By default, consecutive structures with identical titles and '
+                        'connectivity are treated as conformers of a single molecule. '
+                        '-connect              Consider connectivities only (not titles) when perceiving conformers.'
+                        '-stereo               Consider stereochemistry when perceiving conformers. Consecutive structures with the same connectivity will be treated as conformers of a'
+                        'single molecule if and only if they have the same stereochemistry. Titles are ignored.')
+
+        group.addParam('match', StringParam, label='Minimum matching features: ', default='all',
+                       help='Minimum number of hypothesis sites to match. The default is all sites.')
+
+        group = form.addGroup('Conformer params', condition='pharmModel')
+        group.addParam('sample', EnumParam, label='Conformational sampling: ', choices=self.samples,
+                       default=0, help='Conformational sampling method.')
+        group.addParam('max', IntParam, label='Maximum conformers: ', default=100,
+                       help='Maximum number of conformers to generate.')
+        group.addParam('ewin', FloatParam, label='Energy window: ', default=16.0,
+                       help='Conformer energy window in kJ/mol.')
+
+        group = form.addGroup('Scoring params', condition='pharmModel', expertLevel=LEVEL_ADVANCED)
+        group.addParam('aw', FloatParam, label='Alignment weight: ', default=1.0,
+                       help='Alignment score weight. Must be >= 0.')
+        group.addParam('vw', FloatParam, label='Vector weight: ', default=1.0,
+                       help='Vector score weight. Must be >= 0.')
+        group.addParam('volw', FloatParam, label='Volume weight: ', default=1.0,
+                       help='Volume score weight. Must be >= 0.')
+
+        group.addParam('ac', FloatParam, label='Alignment cutoff: ', default=1.2,
+                       help='Alignment score cutoff. Must be >= 0.')
+        group.addParam('vc', FloatParam, label='Vector cutoff: ', default=-1.0,
+                       help='Eliminate hits with vector scores below this value. Must lie on [-1, 1].')
+        group.addParam('volc', FloatParam, label='Volume cutoff: ', default=0.0,
+                       help='Eliminate hits with volume scores below this value. Must lie on [0, 1].')
 
     # --------------------------- INSERT steps functions --------------------
     def _insertAllSteps(self):
-        self._insertFunctionStep('extractpIC50Step')
+        self._insertFunctionStep('getSmilesStep')
         self._insertFunctionStep('createSdfStep')
-        self._insertFunctionStep('runPhaseQSARStep')
+        if getattr(self.model.get(), 'qsarModel') == 'Field':
+            self._insertFunctionStep('runPhaseQSARStep')
+        else:
+            self._insertFunctionStep('runPhaseQSARStepPharm')
+            self._insertFunctionStep('convertOutputStep')
         self._insertFunctionStep('createOutputStep')
 
-    def extractpIC50Step(self):
+    def getSmilesStep(self):
         inputSet = self.inputSmallMolecules.get()
         txtFile = self._getExtraPath("sdf_list.txt")
 
@@ -94,90 +137,11 @@ class ProtSchrodingerQSARTest(EMProtocol):
             scriptDir=os.path.join(os.path.dirname(__file__), "../scripts")
         )
 
-        updatedRows = []
-        with open(smilesCsv, "r") as f:
-            reader = csv.DictReader(f)
-
-            fieldnames = reader.fieldnames
-
-            for row in reader:
-                name = row["name"]
-                smiles = row["smiles"]
-                url = "https://www.ebi.ac.uk/chembl/api/data/activity.json"
-
-                params = {
-                    "canonical_smiles": smiles,
-                    "standard_type": "IC50",
-                    "standard_relation": "=",
-                    "limit": 100
-                }
-
-                pIC50_values = []
-
-                try:
-                    for attempt in range(5):
-                        try:
-                            r = requests.get(url, params=params, timeout=30)
-                            if r.status_code == 200:
-                                break
-                        except:
-                            time.sleep(2 ** attempt)
-                    else:
-                        continue
-
-                    data = r.json()
-
-                    for act in data.get("activities", []):
-
-                        value = act.get("standard_value")
-                        units = act.get("standard_units")
-
-                        if not value or not units:
-                            continue
-
-                        try:
-                            value = float(value)
-                        except:
-                            continue
-
-                        if units == "nM":
-                            ic50_m = value * 1e-9
-                        elif units == "uM":
-                            ic50_m = value * 1e-6
-                        elif units == "mM":
-                            ic50_m = value * 1e-3
-                        elif units == "pM":
-                            ic50_m = value * 1e-12
-                        elif units == "fM":
-                            ic50_m = value * 1e-15
-                        else:
-                            continue
-
-                        pIC50 = -math.log10(ic50_m)
-                        pIC50_values.append(pIC50)
-
-                except Exception as e:
-                    print(f"ChEMBL error for {name}: {e}")
-                    continue
-
-                if len(pIC50_values) == 0:
-                    continue
-
-                row["pIC50"] = sum(pIC50_values) / len(pIC50_values)
-                updatedRows.append(row)
-
-        if "pIC50" not in fieldnames:
-            fieldnames = list(fieldnames) + ["pIC50"]
-        with open(smilesCsv, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(updatedRows)
-
     def createSdfStep(self):
         script = "csvToSDF.py"
         csvFile = self._getExtraPath("qsar_dataset.csv")
         sdfFile = self._getExtraPath("qsar_dataset.sdf")
-        args = [os.path.abspath(csvFile), os.path.abspath(sdfFile)]
+        args = [os.path.abspath(csvFile), os.path.abspath(sdfFile), 'false']
 
         pwchemPlugin.runScript(
             self,
@@ -199,7 +163,6 @@ class ProtSchrodingerQSARTest(EMProtocol):
         predictionsCsv = outputSdf.replace(".sdf", "_pred.csv")
         outputField = os.path.abspath(os.path.join(outDir, "qsar_field.csv"))
         sumFile = os.path.abspath(os.path.join(outDir, "qsar_summary.txt"))
-        print(self.model.get())
         modelFile = os.path.abspath(self.model.get().getModelFile())
         args = [
             inputSdf,
@@ -220,18 +183,89 @@ class ProtSchrodingerQSARTest(EMProtocol):
             with open(sumFile, 'r') as f:
                 print(f.read())
 
-        print(f"Training/testing SDF saved to: {outputSdf}")
-        print(f"Predictions CSV saved to: {predictionsCsv}")
+    def runPhaseQSARStepPharm(self):
+        inputModel = self.model.get()
+        hypothesis = os.path.abspath(inputModel.hypoFile.get())
+        sdfFileMols = os.path.abspath(self._getExtraPath("qsar_dataset.sdf"))
+        jobName = 'pred'
 
+        args = [
+            sdfFileMols,
+            hypothesis,
+            jobName,
+            f"-{self.filters[self.filter.get()]}",
+            #"-sample", self.samples[self.sample.get()], #todo handle these
+            #"-max", self.max.get(),
+            #"-ewin", self.ewin.get(),
+            "-aw", self.aw.get(),
+            "-vw", self.vw.get(),
+            "-volw", self.volw.get(),
+            "-ac", self.ac.get(),
+            "-vc", self.vc.get(),
+            "-volc", self.volc.get(),
+        ]
+
+        if self.match.get() != 'all':
+            args.append("-match")
+            args.append(self.match.get())
+
+        prog = schrodingerPlugin.getHome("phase_screen")
+        self.runJob(prog, args, cwd=self._getExtraPath())
+
+        timeout = 3600
+        waited = 0
+        interval = 2
+
+        while not any(f.endswith(".maegz") for f in os.listdir(self._getExtraPath())):
+            if waited >= timeout:
+                raise RuntimeError("No .maegz file was created in output directory")
+
+            time.sleep(interval)
+            waited += interval
+
+    def convertOutputStep(self):
+        extraPath = self._getExtraPath()
+
+        maegzFiles = [f for f in os.listdir(extraPath) if f.endswith(".maegz")]
+        maegzFile = os.path.join(extraPath, maegzFiles[0])
+        sdfFile = maegzFile.replace(".maegz", ".sdf")
+        prog = schrodingerPlugin.getHome("utilities/structcat")
+        args = [
+            "-imae", os.path.abspath(maegzFile),
+            "-osd", os.path.abspath(sdfFile)
+        ]
+        self.runJob(prog, args, cwd=self._getExtraPath())
+
+        script = "sdfToCsv.py"
+        csvFile = self._getExtraPath("qsar_pred.csv")
+        args = [os.path.abspath(sdfFile), os.path.abspath(csvFile)]
+
+        pwchemPlugin.runScript(
+            self,
+            script,
+            args,
+            env=RDKIT_DIC,
+            cwd=self._getPath(),
+            scriptDir=os.path.join(os.path.dirname(__file__), "../scripts"))
 
     def createOutputStep(self):
-        outDir = self._getPath("qsar_output")
+        if not self.pharmModel.get():
+            outDir = self._getPath("qsar_output")
+            predFile = os.path.join(outDir,"qsar_results_pred.csv")
+            df = pd.read_csv(predFile)
+            df["Title"] = df["Title"].astype(str).str.strip()
 
-        predFile = os.path.join(outDir,"qsar_results_pred.csv")
-        df = pd.read_csv(predFile)
-        df["Title"] = df["Title"].astype(str).str.strip()
+            pred_cols = [c for c in df.columns if c.startswith("Pred(")]
+            df["Pred_mean"] = df[pred_cols].mean(axis=1)
+            predMap = dict(zip(df["Title"], df["Pred_mean"]))
+        else:
+            outDir = self._getExtraPath()
+            predFile = os.path.join(outDir, "qsar_pred.csv")
+            df = pd.read_csv(predFile)
+            df["name"] = df["name"].astype(str).str.strip()
 
-        activityMap = dict(zip(df["Title"], df["Activity"]))
+            df["predicted_activity"] = df["predicted_activity"].astype(str).str.strip()
+            predMap = dict(zip(df["name"], df["predicted_activity"]))
 
         outMols = SetOfSmallMolecules().create(outputPath=self._getPath())
 
@@ -242,8 +276,8 @@ class ProtSchrodingerQSARTest(EMProtocol):
             molName = str(mol.getMolName()).strip()
             newMol.predictedActivity = Float()
 
-            if molName in activityMap:
-                newMol.setAttributeValue('predictedActivity', activityMap[molName])
+            if molName in predMap:
+                newMol.setAttributeValue('predictedActivity', predMap[molName])
             outMols.append(newMol)
 
         self._defineOutputs(outputSmallMolecules=outMols)
@@ -260,6 +294,12 @@ class ProtSchrodingerQSARTest(EMProtocol):
 
     def _validate(self):
         validations = []
+        if (self.aw.get() or self.vw.get() or self.volw.get() or self.ac.get()) < 0:
+            validations.append("Alignment, vector and volume weights, as well as alignment cutoff must be bigger than 0.")
+        if self.vc.get() < -1 or self.vc.get() > 1:
+            validations.append('Vector cutoff must be [-1,1].')
+        if self.volc.get() < -1 or self.volc.get() > 1:
+            validations.append('Volume cutoff must be [0,1].')
         return validations
 
     def _warnings(self):

@@ -10,11 +10,8 @@ import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import PandasTools, AllChem
 
-def csv_to_sdf(inputCsv, outputSdf, smilesCol="smiles", activityCol="pIC50"):
+def csv_to_sdf(inputCsv, outputSdf, smilesCol="smiles", activityCol="pIC50", useActivity=True):
     df = pd.read_csv(inputCsv)
-
-    if smilesCol not in df.columns or activityCol not in df.columns:
-        raise ValueError(f"CSV must have columns '{smilesCol}' and '{activityCol}'")
 
     # Add RDKit molecules
     PandasTools.AddMoleculeColumnToFrame(df, smilesCol=smilesCol, molCol='ROMol', includeFingerprints=False)
@@ -40,7 +37,8 @@ def csv_to_sdf(inputCsv, outputSdf, smilesCol="smiles", activityCol="pIC50"):
         molH.SetProp("_Name", str(row.get("name", f"mol_{idx}")))
 
         # Set activity property
-        molH.SetProp(activityCol, str(row[activityCol]))
+        if useActivity and activityCol in row and pd.notna(row[activityCol]):
+            molH.SetProp(activityCol, str(row[activityCol]))
 
         # Write molecule to SDF
         writer.write(molH)
@@ -54,4 +52,8 @@ if __name__ == "__main__":
     inputCsv = sys.argv[1]
     outputSdf = sys.argv[2]
 
-    csv_to_sdf(inputCsv, outputSdf)
+    useActivity = True
+    if len(sys.argv) > 3:
+        useActivity = sys.argv[3].lower() == "true"
+
+    csv_to_sdf(inputCsv, outputSdf, useActivity=useActivity)

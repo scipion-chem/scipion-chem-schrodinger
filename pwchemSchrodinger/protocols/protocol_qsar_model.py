@@ -484,7 +484,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         script = "csvToSDF.py"
         csvFile = self._getExtraPath("qsar_dataset.csv")
         molFile = self._getExtraPath("qsar_dataset.sdf")
-        args = [os.path.abspath(csvFile), os.path.abspath(molFile)]
+        args = [os.path.abspath(csvFile), os.path.abspath(molFile), 'true']
 
         pwchemPlugin.runScript(
             self,
@@ -755,7 +755,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         model = SchrodingerQSARModel()
         qsarModel = 'Pharm'
         model.qsarModel.set(qsarModel)
-        model.projectPath.set(projectPath)
+        model.projectPath.set(outZip)
         model.setModelFile(os.path.join(resultFolder, f"{bestHypoID}.qsar"))
 
         predFile = os.path.join(resultFolder,  f"{bestHypoID}_pred.csv")
