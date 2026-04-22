@@ -105,7 +105,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         form.addParam('forceField', EnumParam, label='Force field: ', default=1,condition='qsarModel==0',
                       choices=['OPLS_2005', 'OPLS4'],
                       help='Force field from which to draw atom based parameters.')
-        form.addParam('train', FloatParam, label='Training partition: ', default=0.8,condition='qsarModel==0',
+        form.addParam('train', FloatParam, label='Training partition: ', default=0.8,#condition='qsarModel==0',
                       help='Partition of train set.')
         form.addParam('lno', IntParam, label='Leave-n-out cross-validation: ', default=10,condition='qsarModel==0',
                       help='Number of training set observations to exclude for cross-validation.\n'
@@ -185,8 +185,6 @@ class ProtSchrodingerQSAR(EMProtocol):
                        help='Selectivity score weight to use when computing Survival score.')
 
         group = form.addGroup('QSAR model params',condition='qsarModel==1')
-        group.addParam('hypos', BooleanParam, label='Keep only best hypothesis: ', default=True,
-                       help='Keep only model built form the best hypothesis.')
         group.addParam('stylePharm', EnumParam, label='Style: ', choices=['atom', 'pharmacophore'],
                        default=0,
                        help='Indicates whether models should be created from atoms or pharmacophore sites.')
@@ -629,12 +627,17 @@ class ProtSchrodingerQSAR(EMProtocol):
         ]
         self.runJob(prog, args, cwd=self._getExtraPath())
 
-        # define active/inactive
+        # define active/inactive and training/test sets
+        df = pd.read_csv(self._getExtraPath("qsar_dataset.csv"))
+        comp = len(df)
+        train = int(self.train.get()*comp)
         args = [
             os.path.abspath(projectFile),
             'revise',
             '-active', self.active.get(),
             '-inactive', self.inactive.get(),
+            '-train', train,
+            '-rand', 1234,
             '-commit'
         ]
         self.runJob(prog, args, cwd=self._getExtraPath())
@@ -750,62 +753,29 @@ class ProtSchrodingerQSAR(EMProtocol):
         statsFile = os.path.join(outDir, "phaseProject_build_qsar/statistics.csv")
         stats = pd.read_csv(statsFile)
 
-        if self.hypos.get():
-            bestRow = stats.loc[stats['Q^2'].idxmax()]
-            bestHypoID = str(bestRow['HypoID'])
+        bestRow = stats.loc[stats['Q^2'].idxmax()]
+        bestHypoID = str(bestRow['HypoID'])
 
-            model = SchrodingerQSARModel()
-            model.projectPath.set(projectPath)
-            model.setModelFile(os.path.join(resultFolder, f"{bestHypoID}.qsar"))
+        model = SchrodingerQSARModel()
+        model.projectPath.set(projectPath)
+        model.setModelFile(os.path.join(resultFolder, f"{bestHypoID}.qsar"))
 
-            searchPattern = os.path.join(resultFolder,  "*_pred.csv")
-            predFiles = glob.glob(searchPattern)
-            model.predictionsFile.set(predFiles[0])
+        searchPattern = os.path.join(resultFolder,  "*_pred.csv")
+        predFiles = glob.glob(searchPattern)
+        model.predictionsFile.set(predFiles[0])
 
-            style = self.style.get()
-            ffNum = self.forceField.get()
-            if ffNum == 0:
-                ff = 'OPLS_2005'
-            else:
-                ff = 'OPLS4'
-            model.style.set(style)
-            model.forceField.set(ff)
-            model.trainFraction.set(self.train.get())
-            model.lno.set(self.lno.get())
-
-            self._defineOutputs(SchrodingerQSARModel=model)
+        style = self.style.get()
+        ffNum = self.forceField.get()
+        if ffNum == 0:
+            ff = 'OPLS_2005'
         else:
-            outputs = {}
-            for _, row in stats.iterrows():
-                hypoID = str(row['HypoID'])
+            ff = 'OPLS4'
+        model.style.set(style)
+        model.forceField.set(ff)
+        model.trainFraction.set(self.train.get())
+        model.lno.set(self.lno.get())
 
-                modelName = f"model_{hypoID}"
-
-                qsarPath = os.path.join(resultFolder, f"{hypoID}.qsar")
-                predPath = os.path.join(resultFolder, f"{hypoID}_pred.csv")
-
-                if not os.path.exists(qsarPath):
-                    continue
-
-                model = SchrodingerQSARModel()
-                model.projectPath.set(projectPath)
-                model.setModelFile(qsarPath)
-
-                if os.path.exists(predPath):
-                    model.predictionsFile.set(predPath)
-
-                style = self.style.get()
-                ffNum = self.forceField.get()
-                ff = 'OPLS_2005' if ffNum == 0 else 'OPLS4'
-
-                model.style.set(style)
-                model.forceField.set(ff)
-                model.trainFraction.set(self.train.get())
-                model.lno.set(self.lno.get())
-
-                outputs[modelName] = model
-
-            self._defineOutputs(**outputs)
+        self._defineOutputs(SchrodingerQSARModel=model)
 
 
 
