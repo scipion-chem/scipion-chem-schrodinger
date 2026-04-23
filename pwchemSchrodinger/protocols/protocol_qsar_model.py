@@ -105,7 +105,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         form.addParam('forceField', EnumParam, label='Force field: ', default=1,condition='qsarModel==0',
                       choices=['OPLS_2005', 'OPLS4'],
                       help='Force field from which to draw atom based parameters.')
-        form.addParam('train', FloatParam, label='Training partition: ', default=0.8,#condition='qsarModel==0',
+        form.addParam('train', FloatParam, label='Training partition: ', default=0.8,
                       help='Partition of train set.')
         form.addParam('lno', IntParam, label='Leave-n-out cross-validation: ', default=10,condition='qsarModel==0',
                       help='Number of training set observations to exclude for cross-validation.\n'
@@ -148,7 +148,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                        default=True,
                        help=' Respect chiralities from input geometry when generating stereoisomers.')
         group.addParam('forceFieldLig', EnumParam, label='Force field: ', default=0,
-                       choices=['OPLS_2005', 'S-OPLS'],  # 0=14, 1=16
+                       choices=['OPLS_2005', 'S-OPLS'],
                        help=' Force-field to be used for the final geometry optimization.')
 
         group = form.addGroup('Phase project params',condition='qsarModel==1')
@@ -273,7 +273,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                     "limit": 100
                 }
 
-                pIC50_values = []
+                pIC50Values = []
 
                 try:
                     for attempt in range(5):
@@ -302,29 +302,29 @@ class ProtSchrodingerQSAR(EMProtocol):
                             continue
 
                         if units == "nM":
-                            ic50_m = value * 1e-9
+                            ic50M = value * 1e-9
                         elif units == "uM":
-                            ic50_m = value * 1e-6
+                            ic50M = value * 1e-6
                         elif units == "mM":
-                            ic50_m = value * 1e-3
+                            ic50M = value * 1e-3
                         elif units == "pM":
-                            ic50_m = value * 1e-12
+                            ic50M = value * 1e-12
                         elif units == "fM":
-                            ic50_m = value * 1e-15
+                            ic50M = value * 1e-15
                         else:
                             continue
 
-                        pIC50 = -math.log10(ic50_m)
-                        pIC50_values.append(pIC50)
+                        pIC50 = -math.log10(ic50M)
+                        pIC50Values.append(pIC50)
 
                 except Exception as e:
                     print(f"ChEMBL error for {name}: {e}")
                     continue
 
-                if len(pIC50_values) == 0:
+                if len(pIC50Values) == 0:
                     continue
 
-                row["pIC50"] = sum(pIC50_values) / len(pIC50_values)
+                row["pIC50"] = sum(pIC50Values) / len(pIC50Values)
                 updatedRows.append(row)
 
         if "pIC50" not in fieldnames:
@@ -432,19 +432,19 @@ class ProtSchrodingerQSAR(EMProtocol):
                         except:
                             continue
                         if units == "nM":
-                            ic50_m = value * 1e-9
+                            ic50M = value * 1e-9
                         elif units == "uM":
-                            ic50_m = value * 1e-6
+                            ic50M = value * 1e-6
                         elif units == "mM":
-                            ic50_m = value * 1e-3
+                            ic50M = value * 1e-3
                         elif units == "pM":
-                            ic50_m = value * 1e-12
+                            ic50M = value * 1e-12
                         elif units == "fM":
-                            ic50_m = value * 1e-15
+                            ic50M = value * 1e-15
                         else:
                             continue
 
-                        pIC50 = -math.log10(ic50_m)
+                        pIC50 = -math.log10(ic50M)
 
                         if pIC50 < self.actFilter.get():
                             continue
@@ -468,11 +468,11 @@ class ProtSchrodingerQSAR(EMProtocol):
 
         finalData = []
         for name, data in grouped.items():
-            avg_pIC50 = sum(data["values"]) / len(data["values"])
+            avgpIC50 = sum(data["values"]) / len(data["values"])
             finalData.append({
                 "name": name,
                 "smiles": data["smiles"],
-                "pIC50": avg_pIC50
+                "pIC50": avgpIC50
             })
         csvFile = self._getExtraPath("qsar_dataset.csv")
         with open(csvFile, "w", newline="") as f:
@@ -696,19 +696,19 @@ class ProtSchrodingerQSAR(EMProtocol):
         baseName = os.path.splitext(os.path.basename(projectFile))[0]
         outputFile = self._getExtraPath(f"{baseName}_build_qsar.zip")
 
-        prog_project = schrodingerPlugin.getHome("utilities/phase_project")
-        cleanup_args = [
+        progProject = schrodingerPlugin.getHome("utilities/phase_project")
+        cleanupArgs = [
             "phaseProject.phprj",
             "find",
             "-cleanup", "phaseProject",
             "-force"
         ]
-        self.runJob(prog_project, cleanup_args, cwd=self._getExtraPath())
+        self.runJob(progProject, cleanupArgs, cwd=self._getExtraPath())
 
         extraDir = self._getExtraPath()
         projectPath = "phaseProject.phprj"
-        archive_args = [projectPath, "archive", "-force"]
-        self.runJob(prog_project, archive_args, cwd=extraDir)
+        archiveArgs = [projectPath, "archive", "-force"]
+        self.runJob(progProject, archiveArgs, cwd=extraDir)
 
         prog = schrodingerPlugin.getHome("phase_build_qsar")
         st = self.stylePharm.get()
@@ -739,7 +739,6 @@ class ProtSchrodingerQSAR(EMProtocol):
 
     def createOutputStepPharm(self):
         outZip = self._getExtraPath("phaseProject_build_qsar.zip")
-        projectPath = self._getExtraPath("phaseProject.phprj")
         outDir = self._getExtraPath()
         resultFolder = os.path.join(outDir, "phaseProject_build_qsar/qsar")
         os.makedirs(outDir, exist_ok=True)

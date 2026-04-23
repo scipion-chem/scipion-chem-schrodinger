@@ -3,7 +3,7 @@ import csv
 import os
 from rdkit import Chem
 
-def load_molecules(filePath):
+def loadMolecules(filePath):
     ext = os.path.splitext(filePath)[1].lower()
 
     if ext in [".sdf", ".sd"]:
@@ -44,7 +44,7 @@ def main():
 
     for molFile in molFiles:
 
-        supplier = load_molecules(molFile)
+        supplier = loadMolecules(molFile)
 
         for mol in supplier:
             if mol is None:

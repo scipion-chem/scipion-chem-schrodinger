@@ -34,13 +34,13 @@ def sdfToCsv(inputSdf, outputCsv):
                 except:
                     pass
         if preds:
-            predicted_activity = sum(preds) / len(preds)   # mean
+            predictedActivity = sum(preds) / len(preds)   # mean
         else:
-            predicted_activity = None
+            predictedActivity = None
 
         data.append({
             "name": name,
-            "predicted_activity": predicted_activity
+            "predicted_activity": predictedActivity
         })
 
     df = pd.DataFrame(data)

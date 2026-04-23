@@ -2,7 +2,7 @@
 """
 Convert CSV with SMILES and activity (pIC50) to 3D SDF for Phase QSAR.
 Usage:
-    python csv_to_sdf.py input.csv output.sdf
+    python csvToSdf.py input.csv output.sdf
 """
 
 import sys
@@ -10,7 +10,7 @@ import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import PandasTools, AllChem
 
-def csv_to_sdf(inputCsv, outputSdf, smilesCol="smiles", activityCol="pIC50", useActivity=True):
+def csvToSdf(inputCsv, outputSdf, smilesCol="smiles", activityCol="pIC50", useActivity=True):
     df = pd.read_csv(inputCsv)
 
     # Add RDKit molecules
@@ -56,4 +56,4 @@ if __name__ == "__main__":
     if len(sys.argv) > 3:
         useActivity = sys.argv[3].lower() == "true"
 
-    csv_to_sdf(inputCsv, outputSdf, useActivity=useActivity)
+    csvToSdf(inputCsv, outputSdf, useActivity=useActivity)

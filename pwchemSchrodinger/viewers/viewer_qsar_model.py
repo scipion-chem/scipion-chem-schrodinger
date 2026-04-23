@@ -105,9 +105,9 @@ class ProtSchrodingerQSARViewer(pwviewer.ProtocolViewer):
 
         df = pd.read_csv(os.path.abspath(predFile), sep=',')
 
-        pred_cols = [col for col in df.columns if col.startswith('Pred(')]
+        predCols = [col for col in df.columns if col.startswith('Pred(')]
 
-        df['Predicted'] = df[pred_cols].mean(axis=1)
+        df['Predicted'] = df[predCols].mean(axis=1)
 
         plt.figure()
 
