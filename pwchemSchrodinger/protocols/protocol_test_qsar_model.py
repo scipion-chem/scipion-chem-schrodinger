@@ -79,14 +79,6 @@ class ProtSchrodingerQSARTest(EMProtocol):
         group.addParam('match', StringParam, label='Minimum matching features: ', default='all',
                        help='Minimum number of hypothesis sites to match. The default is all sites.')
 
-        group = form.addGroup('Conformer params', condition='pharmModel')
-        group.addParam('sample', EnumParam, label='Conformational sampling: ', choices=self.samples,
-                       default=0, help='Conformational sampling method.')
-        group.addParam('max', IntParam, label='Maximum conformers: ', default=100,
-                       help='Maximum number of conformers to generate.')
-        group.addParam('ewin', FloatParam, label='Energy window: ', default=16.0,
-                       help='Conformer energy window in kJ/mol.')
-
         group = form.addGroup('Scoring params', condition='pharmModel', expertLevel=LEVEL_ADVANCED)
         group.addParam('aw', FloatParam, label='Alignment weight: ', default=1.0,
                        help='Alignment score weight. Must be >= 0.')
@@ -194,9 +186,6 @@ class ProtSchrodingerQSARTest(EMProtocol):
             hypothesis,
             jobName,
             f"-{self.filters[self.filter.get()]}",
-            #"-sample", self.samples[self.sample.get()], #todo handle these
-            #"-max", self.max.get(),
-            #"-ewin", self.ewin.get(),
             "-aw", self.aw.get(),
             "-vw", self.vw.get(),
             "-volw", self.volw.get(),
