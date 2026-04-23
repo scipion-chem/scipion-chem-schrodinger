@@ -45,7 +45,7 @@ class ProtSchrodingerQSARViewer(pwviewer.ProtocolViewer):
     def showHypo(self, group):
         group.addParam('displayHypo',
                        params.LabelParam,
-                       label='Open hypothesis in Maestro',
+                       label='Open pharmacophore hypothesis in Maestro',
                        help='Display the hypothesis file in Maestro GUI.')
 
     def _defineParams(self, form):

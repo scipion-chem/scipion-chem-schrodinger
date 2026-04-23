@@ -72,7 +72,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         form.addParam('chemblInput', BooleanParam, label='Input IDs: ', condition='input==0',
                       default=True,
                       help='Input specific CHEMBL IDs or select target type.')
-        form.addParam('inputSmallMolecules', PointerParam, pointerClass="SetOfSmallMolecules,",
+        form.addParam('inputSmallMolecules', PointerParam, pointerClass="SetOfSmallMolecules",
                       label='Input small molecules:', condition='input==1',
                       help='Input small molecules to convert.')
         form.addParam('type', EnumParam, label='Target type: ', default=0, condition='input==0 and not chemblInput',
@@ -110,7 +110,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                       help='Force field from which to draw atom based parameters.')
         form.addParam('train', FloatParam, label='Training partition: ', default=0.8,
                       help='Partition of train set.')
-        form.addParam('lno', IntParam, label='Leave-n-out cross-validation: ', default=10,condition='qsarModel==0',
+        form.addParam('lno', IntParam, label='Leave-n-out cross-validation: ', default=10,
                       help='Number of training set observations to exclude for cross-validation.\n'
                            'Guidelines:\n'
                            '- small datasets (<20 mols): 1\n'
@@ -191,12 +191,6 @@ class ProtSchrodingerQSAR(EMProtocol):
         group.addParam('stylePharm', EnumParam, label='Style: ', choices=['atom', 'pharmacophore'],
                        default=0,
                        help='Indicates whether models should be created from atoms or pharmacophore sites.')
-        group.addParam('lno', IntParam, label='Leave-n-out cross-validation: ', default=10,
-                       help='Number of training set observations to exclude for cross-validation.\n'
-                            'Guidelines:\n'
-                            '- small datasets (<20 mols): 1\n'
-                            '- medium datasets (20-100 mols): 5-10\n'
-                            '- large datasets (>100 mols): 10')
         group.addParam('grid', FloatParam, label='Grid spacing (Å):', default=1.0,
                        help='Spacing of field points in angstroms (0.5–4.0)')
         group.addParam('tvalue', FloatParam, label='T-value: ', default=2.00, expertLevel=LEVEL_ADVANCED,
@@ -744,6 +738,9 @@ class ProtSchrodingerQSAR(EMProtocol):
 
         statsFile = os.path.join(outDir, "phaseProject_build_qsar/statistics.csv")
         stats = pd.read_csv(statsFile)
+
+        if stats.empty:
+            raise RuntimeError("No valid hypothesis found")
 
         bestRow = stats.loc[stats['Q^2'].idxmax()]
         bestHypoID = str(bestRow['HypoID'])
