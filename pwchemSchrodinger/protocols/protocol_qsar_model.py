@@ -58,6 +58,9 @@ class ProtSchrodingerQSAR(EMProtocol):
     GPCRs = ['CHEMBL251', 'CHEMBL210', 'CHEMBL228']
     enzymes = ['CHEMBL204', 'CHEMBL325', 'CHEMBL3927']
     style = ['ff', 'ff_s', 'ff_e', 'qm_e', 'gauss_s', 'gauss_e', 'gauss_h', 'gauss_a', 'gauss_d', 'gauss', 'gauss_r', 'gauss_ext']
+    csvFile = "qsar_dataset.csv"
+    molFile = "qsar_dataset.sdf"
+    phProject = "phaseProject.phprj"
 
 
     def _defineParams(self, form):
@@ -239,7 +242,7 @@ class ProtSchrodingerQSAR(EMProtocol):
             for mol in inputSet:
                 f.write(f"{os.path.abspath(mol.getFileName())}\n")
 
-        smilesCsv = self._getExtraPath("qsar_dataset.csv")
+        smilesCsv = self._getExtraPath(self.csvFile)
 
         script = "extractSmiles.py"
         args = [
@@ -258,9 +261,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         updatedRows = []
         with open(smilesCsv, "r") as f:
             reader = csv.DictReader(f)
-
             fieldnames = reader.fieldnames
-
             for row in reader:
                 name = row["name"]
                 smiles = row["smiles"]
@@ -274,7 +275,6 @@ class ProtSchrodingerQSAR(EMProtocol):
                 }
 
                 pIC50Values = []
-
                 try:
                     for attempt in range(5):
                         try:
@@ -295,7 +295,6 @@ class ProtSchrodingerQSAR(EMProtocol):
 
                         if not value or not units:
                             continue
-
                         try:
                             value = float(value)
                         except:
@@ -320,10 +319,8 @@ class ProtSchrodingerQSAR(EMProtocol):
                 except Exception as e:
                     print(f"ChEMBL error for {name}: {e}")
                     continue
-
                 if len(pIC50Values) == 0:
                     continue
-
                 row["pIC50"] = sum(pIC50Values) / len(pIC50Values)
                 updatedRows.append(row)
 
@@ -474,7 +471,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                 "smiles": data["smiles"],
                 "pIC50": avgpIC50
             })
-        csvFile = self._getExtraPath("qsar_dataset.csv")
+        csvFile = self._getExtraPath(self.csvFile)
         with open(csvFile, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=["name", "smiles", "pIC50"])
             writer.writeheader()
@@ -482,8 +479,8 @@ class ProtSchrodingerQSAR(EMProtocol):
 
     def createSdfStep(self):
         script = "csvToSDF.py"
-        csvFile = self._getExtraPath("qsar_dataset.csv")
-        molFile = self._getExtraPath("qsar_dataset.sdf")
+        csvFile = self._getExtraPath(self.csvFile)
+        molFile = self._getExtraPath(self.molFile)
         args = [os.path.abspath(csvFile), os.path.abspath(molFile), 'true']
 
         pwchemPlugin.runScript(
@@ -497,7 +494,7 @@ class ProtSchrodingerQSAR(EMProtocol):
     def runPhaseQSARStep(self):
         """Run Schrödinger Phase field-based QSAR directly from SDF input."""
 
-        inputSdf = os.path.abspath(self._getExtraPath("qsar_dataset.sdf"))
+        inputSdf = os.path.abspath(self._getExtraPath(self.molFile))
 
         outDir = self._getPath("qsar_output")
         os.makedirs(outDir, exist_ok=True)
@@ -572,7 +569,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         self._defineOutputs(SchrodingerQSARModel=model)
 
     def runLigPrepStep(self):
-        inputSdf = self._getExtraPath("qsar_dataset.sdf")
+        inputSdf = self._getExtraPath(self.molFile)
         outputFile = ("ligprep.maegz")
 
         prog = schrodingerPlugin.getHome("ligprep")
@@ -610,7 +607,7 @@ class ProtSchrodingerQSAR(EMProtocol):
 
     def createPhaseProjectStep(self):
         ligFile = self._getExtraPath("ligprep.maegz")
-        projectFile = self._getExtraPath("phaseProject.phprj")
+        projectFile = self._getExtraPath(self.phProject)
 
         prog = schrodingerPlugin.getHome("utilities/phase_project")
         # import ligands
@@ -624,7 +621,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         self.runJob(prog, args, cwd=self._getExtraPath())
 
         # define active/inactive and training/test sets
-        df = pd.read_csv(self._getExtraPath("qsar_dataset.csv"))
+        df = pd.read_csv(self._getExtraPath(self.csvFile))
         comp = len(df)
         train = int(self.train.get()*comp)
         args = [
@@ -698,7 +695,7 @@ class ProtSchrodingerQSAR(EMProtocol):
 
         progProject = schrodingerPlugin.getHome("utilities/phase_project")
         cleanupArgs = [
-            "phaseProject.phprj",
+            self.phProject,
             "find",
             "-cleanup", "phaseProject",
             "-force"
@@ -706,7 +703,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         self.runJob(progProject, cleanupArgs, cwd=self._getExtraPath())
 
         extraDir = self._getExtraPath()
-        projectPath = "phaseProject.phprj"
+        projectPath = self.phProject
         archiveArgs = [projectPath, "archive", "-force"]
         self.runJob(progProject, archiveArgs, cwd=extraDir)
 
