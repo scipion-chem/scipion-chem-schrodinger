@@ -39,7 +39,6 @@ from pyworkflow.protocol.params import PointerParam, EnumParam, STEPS_PARALLEL, 
 # Scipion chem imports
 from pwchem.objects import SetOfSmallMolecules, SmallMolecule
 from pyworkflow.object import Float
-from pwchemSchrodinger.objects import SchrodingerQSARModel
 
 from pwchem.constants import RDKIT_DIC
 from pwchem import Plugin as pwchemPlugin
@@ -102,7 +101,7 @@ class ProtSchrodingerQSARTest(EMProtocol):
             self._insertFunctionStep('runPhaseQSARStep')
         else:
             self._insertFunctionStep('runPhaseQSARStepPharm')
-            self._insertFunctionStep('convertOutputStep')
+            self._insertFunctionStep('convertOutputFilesStep')
         self._insertFunctionStep('createOutputStep')
 
     def getSmilesStep(self):
@@ -212,7 +211,7 @@ class ProtSchrodingerQSARTest(EMProtocol):
             time.sleep(interval)
             waited += interval
 
-    def convertOutputStep(self):
+    def convertOutputFilesStep(self):
         extraPath = self._getExtraPath()
 
         maegzFiles = [f for f in os.listdir(extraPath) if f.endswith(".maegz")]
@@ -275,6 +274,20 @@ class ProtSchrodingerQSARTest(EMProtocol):
     # --------------------------- INFO functions -----------------------------------
     def _summary(self):
         summary=[]
+        if self.pharmModel.get():
+            outputFile = self._getExtraPath("qsar_pred.csv")
+        else:
+            outputFile = self._getPath("qsar_output/qsar_results_pred.csv")
+
+        if os.path.exists(outputFile):
+            with open(outputFile, 'r') as f:
+                nLines = sum(1 for _ in f)
+            nData = max(0, nLines - 1)
+
+            summary.append(f"Predicted activity for {nData} molecules")
+        else:
+            summary.append("No prediction file found.")
+
         return summary
 
     def _methods(self):
