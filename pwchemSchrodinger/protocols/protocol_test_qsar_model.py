@@ -44,6 +44,8 @@ from pwchem.constants import RDKIT_DIC
 from pwchem import Plugin as pwchemPlugin
 
 from .. import Plugin as schrodingerPlugin
+from ..utils import createSdf
+
 
 class ProtSchrodingerQSARTest(EMProtocol):
     """Test QSAR models"""
@@ -96,14 +98,14 @@ class ProtSchrodingerQSARTest(EMProtocol):
 
     # --------------------------- INSERT steps functions --------------------
     def _insertAllSteps(self):
-        self._insertFunctionStep('getSmilesStep')
-        self._insertFunctionStep('createSdfStep')
+        self._insertFunctionStep(self.getSmilesStep)
+        self._insertFunctionStep(self.createSdfStep)
         if getattr(self.model.get(), 'qsarModel') == 'Field':
-            self._insertFunctionStep('runPhaseQSARStep')
+            self._insertFunctionStep(self.runPhaseQSARStep)
         else:
-            self._insertFunctionStep('runPhaseQSARStepPharm')
-            self._insertFunctionStep('convertOutputFilesStep')
-        self._insertFunctionStep('createOutputStep')
+            self._insertFunctionStep(self.runPhaseQSARPharmStep)
+            self._insertFunctionStep(self.convertOutputFilesStep)
+        self._insertFunctionStep(self.createOutputStep)
 
     def getSmilesStep(self):
         inputSet = self.inputSmallMolecules.get()
@@ -130,19 +132,9 @@ class ProtSchrodingerQSARTest(EMProtocol):
         )
 
     def createSdfStep(self):
-        script = "csvToSDF.py"
         csvFile = self._getExtraPath("qsar_dataset.csv")
         sdfFile = self._getExtraPath("qsar_dataset.sdf")
-        args = [os.path.abspath(csvFile), os.path.abspath(sdfFile), 'false']
-
-        pwchemPlugin.runScript(
-            self,
-            script,
-            args,
-            env=RDKIT_DIC,
-            cwd=self._getPath(),
-            scriptDir=self.scriptsDir
-        )
+        createSdf(self, csvFile, sdfFile)
 
     def runPhaseQSARStep(self):
         """Run Schrödinger Phase field-based QSAR directly from SDF input."""
@@ -176,7 +168,7 @@ class ProtSchrodingerQSARTest(EMProtocol):
             with open(sumFile, 'r') as f:
                 print(f.read())
 
-    def runPhaseQSARStepPharm(self):
+    def runPhaseQSARPharmStep(self):
         inputModel = self.model.get()
         hypothesis = os.path.abspath(inputModel.hypoFile.get())
         sdfFileMols = os.path.abspath(self._getExtraPath("qsar_dataset.sdf"))

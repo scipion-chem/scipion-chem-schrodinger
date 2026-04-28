@@ -48,6 +48,8 @@ from pwchemSchrodinger.objects import SchrodingerQSARModel
 from pwchem.constants import RDKIT_DIC, OPENBABEL_DIC
 from pwchem import Plugin as pwchemPlugin
 
+from ..utils import createSdf
+
 from .. import Plugin as schrodingerPlugin
 
 class ProtSchrodingerQSAR(EMProtocol):
@@ -61,6 +63,14 @@ class ProtSchrodingerQSAR(EMProtocol):
     csvFile = "qsar_dataset.csv"
     molFile = "qsar_dataset.sdf"
     phProject = "phaseProject.phprj"
+
+    UNIT_TO_MOLAR = {
+        "mM": 1e-3,
+        "uM": 1e-6,
+        "nM": 1e-9,
+        "pM": 1e-12,
+        "fM": 1e-15
+    }
 
 
     def _defineParams(self, form):
@@ -92,7 +102,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                       help='Choose whether to create a conventional QSAR model or a pharmacophore QSAR.')
 
         form.addParam('style', StringParam, label='Fields: ', default='ff', condition='qsarModel==0',
-                      help='Fields to include (can be more than one): \n'
+                      help='Fields to include (can be more than one separated with commas): \n'
                            '- ff: all force fields\n'
                            '- ff_s: force field steric (Lennar-Jones)\n'
                            '- ff_e: force field electrostatic (q/r)\n'
@@ -211,119 +221,37 @@ class ProtSchrodingerQSAR(EMProtocol):
     # --------------------------- INSERT steps functions --------------------
     def _insertAllSteps(self):
         if self.input.get() == 0:
-            self._insertFunctionStep('getpIC50Step')
+            self._insertFunctionStep(self.getpIC50Step)
         elif self.input.get() == 1:
-            self._insertFunctionStep('extractpIC50Step')
+            self._insertFunctionStep(self.extractpIC50Step)
         else:
-            self._insertFunctionStep('checkActivityStep')
-        self._insertFunctionStep('createSdfStep')
+            self._insertFunctionStep(self.checkActivityStep)
+        self._insertFunctionStep(self.createSdfStep)
 
         if (self.qsarModel.get() == 0):
-            self._insertFunctionStep('runPhaseQSARStep')
-            self._insertFunctionStep('createOutputStep')
+            self._insertFunctionStep(self.runPhaseQSARStep)
+            self._insertFunctionStep(self.createOutputStep)
         else:
-            self._insertFunctionStep('runLigPrepStep')
-            self._insertFunctionStep('createPhaseProjectStep')
-            self._insertFunctionStep('createPharmacophoreDiscStep')
-            self._insertFunctionStep('runPhaseQSARStepPharm')
-            self._insertFunctionStep('createOutputStepPharm')
+            self._insertFunctionStep(self.runLigPrepStep)
+            self._insertFunctionStep(self.createPhaseProjectStep)
+            self._insertFunctionStep(self.createPharmacophoreDiscStep)
+            self._insertFunctionStep(self.runPhaseQSARPharmStep)
+            self._insertFunctionStep(self.createOutputPharmStep)
 
     def extractpIC50Step(self):
-        inputSet = self.inputSmallMolecules.get()
-        txtFile = self._getExtraPath("sdf_list.txt")
+        txtFile = self._writeSdfList()
+        smilesCsv = self._runSmilesExtraction(txtFile)
 
-        with open(txtFile, "w") as f:
-            for mol in inputSet:
-                f.write(f"{os.path.abspath(mol.getFileName())}\n")
-
-        smilesCsv = self._getExtraPath(self.csvFile)
-
-        script = "extractSmiles.py"
-        args = [
-            os.path.abspath(txtFile),
-            os.path.abspath(smilesCsv)
-        ]
-        pwchemPlugin.runScript(
-            self,
-            script,
-            args,
-            env=RDKIT_DIC,
-            cwd=self._getPath(),
-            scriptDir=os.path.join(os.path.dirname(__file__), "../scripts")
-        )
-
+        rows, fieldnames = self._readCsv(smilesCsv)
         updatedRows = []
-        with open(smilesCsv, "r") as f:
-            reader = csv.DictReader(f)
-            fieldnames = reader.fieldnames
-            for row in reader:
-                name = row["name"]
-                smiles = row["smiles"]
-                url = "https://www.ebi.ac.uk/chembl/api/data/activity.json"
 
-                params = {
-                    "canonical_smiles": smiles,
-                    "standard_type": "IC50",
-                    "standard_relation": "=",
-                    "limit": 100
-                }
-
-                pIC50Values = []
-                try:
-                    for attempt in range(5):
-                        try:
-                            r = requests.get(url, params=params, timeout=30)
-                            if r.status_code == 200:
-                                break
-                        except:
-                            time.sleep(2 ** attempt)
-                    else:
-                        continue
-
-                    data = r.json()
-
-                    for act in data.get("activities", []):
-
-                        value = act.get("standard_value")
-                        units = act.get("standard_units")
-
-                        if not value or not units:
-                            continue
-                        try:
-                            value = float(value)
-                        except:
-                            continue
-
-                        if units == "nM":
-                            ic50M = value * 1e-9
-                        elif units == "uM":
-                            ic50M = value * 1e-6
-                        elif units == "mM":
-                            ic50M = value * 1e-3
-                        elif units == "pM":
-                            ic50M = value * 1e-12
-                        elif units == "fM":
-                            ic50M = value * 1e-15
-                        else:
-                            continue
-
-                        pIC50 = -math.log10(ic50M)
-                        pIC50Values.append(pIC50)
-
-                except Exception as e:
-                    print(f"ChEMBL error for {name}: {e}")
-                    continue
-                if len(pIC50Values) == 0:
-                    continue
-                row["pIC50"] = sum(pIC50Values) / len(pIC50Values)
+        for row in rows:
+            pIC50 = self._computeAveragePIC50(row["name"], row["smiles"])
+            if pIC50 is not None:
+                row["pIC50"] = pIC50
                 updatedRows.append(row)
 
-        if "pIC50" not in fieldnames:
-            fieldnames = list(fieldnames) + ["pIC50"]
-        with open(smilesCsv, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(updatedRows)
+        self._writeCsv(smilesCsv, updatedRows, fieldnames)
 
     def checkActivityStep(self):
         csvFile = self.inputFile.get()
@@ -371,119 +299,22 @@ class ProtSchrodingerQSAR(EMProtocol):
             writer.writerows(rows)
 
     def getpIC50Step(self):
-        if self.chemblInput.get():
-            targets = [t.strip() for t in self.ids.get().split(",")]
-        else:
-            if self.type.get() == 0:
-                targets = self.kinases
-            elif self.type.get() == 1:
-                targets = self.GPCRs
-            else:
-                targets = self.enzymes
+        targets = self._getTargets()
 
         allResults = []
         for targetId in targets:
             print(f"Fetching data for {targetId}")
-            url = "https://www.ebi.ac.uk/chembl/api/data/activity.json"
-            params = {
-                "target_chemblId": targetId,
-                "standard_type": "IC50",
-                "assay_type": "B",
-                "limit": 1000
-            }
-            while url:
-                try:
-                    for attempt in range(5):
-                        try:
-                            r = requests.get(url, params=params, timeout=60)
-                            if r.status_code == 200:
-                                break
-                            else:
-                                print(f"Failed to fetch {targetId} (status {r.status_code})")
-                        except requests.exceptions.Timeout:
-                            print(f"Timeout fetching {targetId} (attempt {attempt + 1}/5)")
-                            time.sleep(2 ** attempt)
-                        except Exception as e:
-                            print(f"Error fetching {targetId}: {e}")
-                            time.sleep(2 ** attempt)
-                    else:
-                        print(f"Skipping {targetId} after multiple failed attempts")
-                        break
-                    data = r.json()
-                    for act in data.get("activities", []):
-                        smiles = act.get("canonical_smiles")
-                        value = act.get("standard_value")
-                        units = act.get("standard_units")
-                        chemblId = act.get("molecule_chembl_id")
+            allResults.extend(self._fetchTargetActivities(targetId))
 
-                        if not smiles or not value or not chemblId:
-                            continue
-                        try:
-                            value = float(value)
-                        except:
-                            continue
-                        if units == "nM":
-                            ic50M = value * 1e-9
-                        elif units == "uM":
-                            ic50M = value * 1e-6
-                        elif units == "mM":
-                            ic50M = value * 1e-3
-                        elif units == "pM":
-                            ic50M = value * 1e-12
-                        elif units == "fM":
-                            ic50M = value * 1e-15
-                        else:
-                            continue
+        finalData = self._groupAndAverage(allResults)
 
-                        pIC50 = -math.log10(ic50M)
-
-                        if pIC50 < self.actFilter.get():
-                            continue
-
-                        allResults.append({
-                            "name": chemblId,
-                            "smiles": smiles,
-                            "pIC50": pIC50
-                        })
-                    url = data.get("next")
-                    params = None
-                except Exception as e:
-                    print(f"Error fetching target {targetId}: {e}")
-                    break
-        grouped = {}
-        for row in allResults:
-            key = row["name"]
-            if key not in grouped:
-                grouped[key] = {"smiles": row["smiles"], "values": []}
-            grouped[key]["values"].append(row["pIC50"])
-
-        finalData = []
-        for name, data in grouped.items():
-            avgpIC50 = sum(data["values"]) / len(data["values"])
-            finalData.append({
-                "name": name,
-                "smiles": data["smiles"],
-                "pIC50": avgpIC50
-            })
         csvFile = self._getExtraPath(self.csvFile)
-        with open(csvFile, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["name", "smiles", "pIC50"])
-            writer.writeheader()
-            writer.writerows(finalData)
+        self._writeCsv(csvFile, finalData, ["name", "smiles", "pIC50"])
 
     def createSdfStep(self):
-        script = "csvToSDF.py"
         csvFile = self._getExtraPath(self.csvFile)
         molFile = self._getExtraPath(self.molFile)
-        args = [os.path.abspath(csvFile), os.path.abspath(molFile), 'true']
-
-        pwchemPlugin.runScript(
-            self,
-            script,
-            args,
-            env=RDKIT_DIC,
-            cwd=self._getPath(),
-            scriptDir=os.path.join(os.path.dirname(__file__), "../scripts"))
+        createSdf(self, csvFile, molFile)
 
     def runPhaseQSARStep(self):
         """Run Schrödinger Phase field-based QSAR directly from SDF input."""
@@ -682,7 +513,7 @@ class ProtSchrodingerQSAR(EMProtocol):
             time.sleep(interval)
             waited += interval
 
-    def runPhaseQSARStepPharm(self):
+    def runPhaseQSARPharmStep(self):
         projectFile = self._getExtraPath("phaseProject.phzip")
         baseName = os.path.splitext(os.path.basename(projectFile))[0]
         outputFile = self._getExtraPath(f"{baseName}_build_qsar.zip")
@@ -728,7 +559,7 @@ class ProtSchrodingerQSAR(EMProtocol):
             time.sleep(interval)
             waited += interval
 
-    def createOutputStepPharm(self):
+    def createOutputPharmStep(self):
         outZip = self._getExtraPath("phaseProject_build_qsar.zip")
         outDir = self._getExtraPath()
         resultFolder = os.path.join(outDir, "phaseProject_build_qsar/qsar")
@@ -832,3 +663,179 @@ class ProtSchrodingerQSAR(EMProtocol):
                 if smi.lower() != 'smiles':
                     break
         return smi
+
+    def _writeSdfList(self):
+        inputSet = self.inputSmallMolecules.get()
+        txtFile = self._getExtraPath("sdf_list.txt")
+
+        with open(txtFile, "w") as f:
+            for mol in inputSet:
+                f.write(f"{os.path.abspath(mol.getFileName())}\n")
+
+        return txtFile
+
+    def _runSmilesExtraction(self, txtFile):
+        smilesCsv = self._getExtraPath(self.csvFile)
+
+        pwchemPlugin.runScript(
+            self,
+            "extractSmiles.py",
+            [os.path.abspath(txtFile), os.path.abspath(smilesCsv)],
+            env=RDKIT_DIC,
+            cwd=self._getPath(),
+            scriptDir=os.path.join(os.path.dirname(__file__), "../scripts")
+        )
+
+        return smilesCsv
+
+    def _readCsv(self, path):
+        with open(path, "r") as f:
+            reader = csv.DictReader(f)
+            return list(reader), reader.fieldnames
+
+    def _writeCsv(self, path, rows, fieldnames):
+        if "pIC50" not in fieldnames:
+            fieldnames = list(fieldnames) + ["pIC50"]
+
+        with open(path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+    def _computeAveragePIC50(self, name, smiles):
+        url = "https://www.ebi.ac.uk/chembl/api/data/activity.json"
+        params = {
+            "canonical_smiles": smiles,
+            "standard_type": "IC50",
+            "standard_relation": "=",
+            "limit": 100
+        }
+
+        try:
+            response = self._requestWithRetry(url, params)
+            if response is None:
+                return None
+
+            data = response.json()
+            values = [
+                self._convertToPIC50(act)
+                for act in data.get("activities", [])
+            ]
+
+            values = [v for v in values if v is not None]
+
+            if not values:
+                return None
+
+            return sum(values) / len(values)
+
+        except Exception as e:
+            print(f"ChEMBL error for {name}: {e}")
+            return None
+
+    def _requestWithRetry(self, url, params, retries=5):
+        for attempt in range(retries):
+            try:
+                r = requests.get(url, params=params, timeout=30)
+                if r.status_code == 200:
+                    return r
+            except:
+                time.sleep(2 ** attempt)
+        return None
+
+    def _convertToPIC50(self, act):
+        value = act.get("standard_value")
+        units = act.get("standard_units")
+
+        if not value or units not in self.UNIT_TO_MOLAR:
+            return None
+
+        try:
+            value = float(value)
+        except:
+            return None
+
+        ic50M = value * self.UNIT_TO_MOLAR[units]
+        return -math.log10(ic50M)
+
+    def _getTargets(self):
+        if self.chemblInput.get():
+            return [t.strip() for t in self.ids.get().split(",")]
+
+        return {
+            0: self.kinases,
+            1: self.GPCRs
+        }.get(self.type.get(), self.enzymes)
+
+    def _fetchTargetActivities(self, targetId):
+        url = "https://www.ebi.ac.uk/chembl/api/data/activity.json"
+        params = {
+            "target_chemblId": targetId,
+            "standard_type": "IC50",
+            "assay_type": "B",
+            "limit": 1000
+        }
+
+        results = []
+
+        while url:
+            response = self._requestWithRetry(url, params, retries=5)
+            if response is None:
+                print(f"Skipping {targetId} after failed attempts")
+                break
+
+            try:
+                data = response.json()
+            except Exception as e:
+                print(f"JSON error for {targetId}: {e}")
+                break
+
+            results.extend(self._parseActivities(data))
+            url = data.get("next")
+            params = None  # pagination uses full URL
+
+        return results
+
+    def _parseActivities(self, data):
+        results = []
+
+        for act in data.get("activities", []):
+            smiles = act.get("canonical_smiles")
+            chemblId = act.get("molecule_chembl_id")
+
+            if not smiles or not chemblId:
+                continue
+
+            pIC50 = self._convertToPIC50(act)
+            if pIC50 is None:
+                continue
+
+            if pIC50 < self.actFilter.get():
+                continue
+
+            results.append({
+                "name": chemblId,
+                "smiles": smiles,
+                "pIC50": pIC50
+            })
+
+        return results
+
+    def _groupAndAverage(self, rows):
+        grouped = {}
+
+        for row in rows:
+            key = row["name"]
+            grouped.setdefault(key, {
+                "smiles": row["smiles"],
+                "values": []
+            })["values"].append(row["pIC50"])
+
+        return [
+            {
+                "name": name,
+                "smiles": data["smiles"],
+                "pIC50": sum(data["values"]) / len(data["values"])
+            }
+            for name, data in grouped.items()
+        ]
