@@ -676,14 +676,19 @@ class ProtSchrodingerQSAR(EMProtocol):
 
     def _runSmilesExtraction(self, txtFile):
         smilesCsv = self._getExtraPath(self.csvFile)
+        args =  [
+            "-i", os.path.abspath(txtFile),
+            "-of", "smiles_csv",
+            "-o", os.path.splitext(os.path.basename(smilesCsv))[0],
+            "-od", os.path.abspath(self._getExtraPath())
+        ]
 
         pwchemPlugin.runScript(
             self,
-            "extractSmiles.py",
-            [os.path.abspath(txtFile), os.path.abspath(smilesCsv)],
+            "rdkit_IO.py",
+            args,
             env=RDKIT_DIC,
-            cwd=self._getPath(),
-            scriptDir=os.path.join(os.path.dirname(__file__), "../scripts")
+            cwd=self._getPath()
         )
 
         return smilesCsv

@@ -117,18 +117,19 @@ class ProtSchrodingerQSARTest(EMProtocol):
 
         smilesCsv = self._getExtraPath("qsar_dataset.csv")
 
-        script = "extractSmiles.py"
+        script = "rdkit_IO.py"
         args = [
-            os.path.abspath(txtFile),
-            os.path.abspath(smilesCsv)
+            "-i", os.path.abspath(txtFile),
+            "-of", "smiles_csv",
+            "-o", os.path.splitext(os.path.basename(smilesCsv))[0],
+            "-od", os.path.abspath(self._getExtraPath())
         ]
         pwchemPlugin.runScript(
             self,
             script,
             args,
             env=RDKIT_DIC,
-            cwd=self._getPath(),
-            scriptDir=self.scriptsDir
+            cwd=self._getPath()
         )
 
     def createSdfStep(self):
