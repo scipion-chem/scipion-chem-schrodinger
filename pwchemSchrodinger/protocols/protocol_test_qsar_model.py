@@ -134,15 +134,15 @@ class ProtSchrodingerQSARTest(EMProtocol):
 
     def createSdfStep(self):
         csvFile = self._getExtraPath("qsar_dataset.csv")
-        sdfFile = self._getExtraPath("qsar_dataset.sdf")
+        sdfFile = self.getSDFFile()
         createSdf(self, csvFile, sdfFile)
 
     def runPhaseQSARStep(self):
         """Run Schrödinger Phase field-based QSAR directly from SDF input."""
 
-        inputSdf = os.path.abspath(self._getExtraPath("qsar_dataset.sdf"))
+        inputSdf = self.getSDFFile()
 
-        outDir = self._getPath("qsar_output")
+        outDir = self.getOutDir()
         os.makedirs(outDir, exist_ok=True)
 
         outputSdf = os.path.abspath(os.path.join(outDir, "qsar_results.sdf"))
@@ -172,7 +172,7 @@ class ProtSchrodingerQSARTest(EMProtocol):
     def runPhaseQSARPharmStep(self):
         inputModel = self.model.get()
         hypothesis = os.path.abspath(inputModel.hypoFile.get())
-        sdfFileMols = os.path.abspath(self._getExtraPath("qsar_dataset.sdf"))
+        sdfFileMols = self.getSDFFile()
         jobName = 'pred'
 
         args = [
@@ -217,7 +217,7 @@ class ProtSchrodingerQSARTest(EMProtocol):
             "-imae", os.path.abspath(maegzFile),
             "-osd", os.path.abspath(sdfFile)
         ]
-        self.runJob(prog, args, cwd=self._getExtraPath())
+        self.runJob(prog, args, cwd=extraPath)
 
         script = "sdfToCsv.py"
         csvFile = self._getExtraPath(self.pharmCsv)
@@ -234,8 +234,8 @@ class ProtSchrodingerQSARTest(EMProtocol):
 
     def createOutputStep(self):
         if not self.pharmModel.get():
-            outDir = self._getPath("qsar_output")
-            predFile = os.path.join(outDir,"qsar_results_pred.csv")
+            outDir = self.getOutDir()
+            predFile = os.path.join(outDir, "qsar_results_pred.csv")
             df = pd.read_csv(predFile)
             df["Title"] = df["Title"].astype(str).str.strip()
 
@@ -243,8 +243,7 @@ class ProtSchrodingerQSARTest(EMProtocol):
             df["Pred_mean"] = df[predCols].mean(axis=1)
             predMap = dict(zip(df["Title"], df["Pred_mean"]))
         else:
-            outDir = self._getExtraPath()
-            predFile = os.path.join(outDir,self.pharmCsv)
+            predFile = self._getExtraPath(self.pharmCsv)
             df = pd.read_csv(predFile)
             df["name"] = df["name"].astype(str).str.strip()
 
@@ -303,3 +302,9 @@ class ProtSchrodingerQSARTest(EMProtocol):
     def _warnings(self):
         warnings = []
         return warnings
+
+    def getSDFFile(self):
+        return os.path.abspath(self._getExtraPath("qsar_dataset.sdf"))
+
+    def getOutDir(self):
+        return os.path.abspath(self._getPath("qsar_output"))

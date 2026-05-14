@@ -64,6 +64,8 @@ class ProtSchrodingerQSAR(EMProtocol):
     molFile = "qsar_dataset.sdf"
     phProject = "phaseProject.phprj"
 
+    FIELD_QSAR, PHARM_QSAR = 'qsarModel==0', 'qsarModel==1'
+
     UNIT_TO_MOLAR = {
         "mM": 1e-3,
         "uM": 1e-6,
@@ -101,7 +103,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                       default=0,
                       help='Choose whether to create a conventional QSAR model or a pharmacophore QSAR.')
 
-        form.addParam('style', StringParam, label='Fields: ', default='ff', condition='qsarModel==0',
+        form.addParam('style', StringParam, label='Fields: ', default='ff', condition=FIELD_QSAR,
                       help='Fields to include (can be more than one separated with commas): \n'
                            '- ff: all force fields\n'
                            '- ff_s: force field steric (Lennar-Jones)\n'
@@ -115,7 +117,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                            '- gauss: all above gaussian fields\n'
                            '- gauss_r: gaussian aromatic ring\n'
                            '- gauss_ext: gauss + gauss_r')
-        form.addParam('forceField', EnumParam, label='Force field: ', default=1,condition='qsarModel==0',
+        form.addParam('forceField', EnumParam, label='Force field: ', default=1,condition=FIELD_QSAR,
                       choices=['OPLS_2005', 'OPLS4'],
                       help='Force field from which to draw atom based parameters.')
         form.addParam('train', FloatParam, label='Training partition: ', default=0.8,
@@ -127,7 +129,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                            '- medium datasets (20-100 mols): 5-10\n'
                            '- large datasets (>100 mols): 10')
 
-        group = form.addGroup('Grid and FF params', condition='qsarModel==0')
+        group = form.addGroup('Grid and FF params', condition=FIELD_QSAR)
         group.addParam('grid', FloatParam, label='Grid spacing (Å):', default=1.0,
                        help='Spacing of field points in angstroms (0.5–4.0)')
         group.addParam('extend', FloatParam, label='Grid extension (Å):', default=3.0,
@@ -144,7 +146,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                        expertLevel=LEVEL_ADVANCED,
                        help='Ignore fields if standard deviation over training set is less than this')
 
-        group = form.addGroup('Molecule preparation params',condition='qsarModel==1')
+        group = form.addGroup('Molecule preparation params',condition=PHARM_QSAR)
         group.addParam('epik', EnumParam, label='Epik version: ', choices=['Classic', 'Modern'],
                        default=1,
                        help='Epik version to use for ionization.')
@@ -164,7 +166,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                        choices=['OPLS_2005', 'S-OPLS'],
                        help=' Force-field to be used for the final geometry optimization.')
 
-        group = form.addGroup('Phase project params',condition='qsarModel==1')
+        group = form.addGroup('Phase project params',condition=PHARM_QSAR)
         group.addParam('active', FloatParam, label='Active threshold: ', default=7.0,
                        help='Good binders with pIC50>=*threshold*.')
         group.addParam('inactive', FloatParam, label='Inactive threshold: ', default=5.5,
@@ -172,7 +174,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         group.addParam('repr', IntParam, label='Number of representatives: ', default=30,
                        help='How many actives to keep as representatives.')
 
-        group = form.addGroup('Pharmacophore discovery params',condition='qsarModel==1')
+        group = form.addGroup('Pharmacophore discovery params',condition=PHARM_QSAR)
         group.addParam('sites', StringParam, label='Pharmacophore size: ', default='4:6',
                        help='Search each reference ligand for common pharmacophores containing between <min> and <max> sites. The legal range is 3:7. The actual searchproceeds from <max> down to <min>, and halts before reaching <min> if common pharmacophores containing more than <min> sites are found. Use -ex to force the full range to be considered. This procedure is followed independently for each reference ligand conformer, so it is still possible to obtain common pharmacophores that contain different numbers of sites even if -ex is not used.')
         group.addParam('miss', IntParam, label='Maximum misses (flexibility): ', default=1,
@@ -197,7 +199,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         group.addParam('select', FloatParam, label='Selectivity score weight: ', default=1, expertLevel=LEVEL_ADVANCED,
                        help='Selectivity score weight to use when computing Survival score.')
 
-        group = form.addGroup('QSAR model params',condition='qsarModel==1')
+        group = form.addGroup('QSAR model params',condition=PHARM_QSAR)
         group.addParam('stylePharm', EnumParam, label='Style: ', choices=['atom', 'pharmacophore'],
                        default=0,
                        help='Indicates whether models should be created from atoms or pharmacophore sites.')
@@ -634,7 +636,7 @@ class ProtSchrodingerQSAR(EMProtocol):
 
             args = f' -i "{fnSmall}" -of smi -o {fnOut} --outputDir {outDir}'
 
-            if fnSmall.endswith(".pdbqt") or fnSmall.endswith(".mol2"):
+            if fnSmall.endswith((".pdbqt", ".mol2")):
                 envDic, scriptName = OPENBABEL_DIC, 'obabel_IO.py'
             else:
                 envDic, scriptName = RDKIT_DIC, 'rdkit_IO.py'

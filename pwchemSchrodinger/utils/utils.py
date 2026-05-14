@@ -212,7 +212,7 @@ def convertMAEMolSet(molSet, outDir, njobs, updateSet=True, subset=True):
         return convMols
 
 def isMaeFile(molFile):
-    return molFile.endswith('.mae') or molFile.endswith('.maegz')
+    return molFile.endswith(('.mae', '.maegz'))
 
 def convertReceptor2PDB(maeFile, outPDB=None, cwd=None):
     name, ext = os.path.splitext(maeFile)
