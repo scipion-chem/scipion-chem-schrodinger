@@ -474,11 +474,14 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
       # Manage files from autodock: 1) Convert to readable by schro (SDF). 2) correct preparation.
       # 3) Switch to mol2 to manage atom labels
       outDir = os.path.abspath(self._getTmpPath())
-      args = ' -i "{}" -of sdf --outputDir "{}" --outputName {}_AD4'.format(os.path.abspath(fnSmall),
-                                                                            os.path.abspath(outDir), baseName)
-      pwchemPlugin.runScript(self, 'obabel_IO.py', args, env=OPENBABEL_DIC, cwd=outDir, popen=True)
+      args = ' -i "{}" -of sdf --outputDir "{}" --outputName {}_AD4.sdf'.format(os.path.abspath(fnSmall),
+                                                                      os.path.abspath(outDir), baseName)
+
+      pwchemPlugin.runScript(self, 'obabel_IO.py', args, env=OPENBABEL_DIC, cwd=outDir)  # blocking
       auxFile = os.path.abspath(os.path.join(outDir, '{}_AD4.sdf'.format(baseName)))
-      fnSmall = auxFile.replace('_AD4.sdf', '_aux.sdf')
+      while not os.path.exists(auxFile):
+        time.sleep(0.2)
+      fnSmall = auxFile
 
     args = "{} {}".format(fnSmall, outFile)
     subprocess.check_call([structConvertProg, *args.split()])
