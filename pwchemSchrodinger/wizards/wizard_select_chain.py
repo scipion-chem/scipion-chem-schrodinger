@@ -33,8 +33,9 @@ information such as name and number of residues.
 """
 
 # Imports
-from pwchem.wizards import SelectChainWizardQT, SelectResidueWizardQT, AddResidueWizard
+from pwchem.wizards import SelectChainWizardQT, SelectResidueWizardQT, AddResidueWizard, SelectElementWizard
 from ..protocols import ProtSchrodingerPrepWizard, ProtSchrodingerPrime, ProtSchrodingerIFD
+from ..viewers import ProtGlideDockingViewer
 
 SelectChainWizardQT().addTarget(protocol=ProtSchrodingerPrepWizard,
                                 targets=['chain_name'],
@@ -85,3 +86,18 @@ SelectResidueWizardQT().addTarget(protocol=ProtSchrodingerIFD,
                                   targets=['residuesHelix'],
                                   inputs=[{'fromPockets': ['inputAtomStruct', 'inputStructROIs']}, 'selChain'],
                                   outputs=['residuesHelix'])
+
+SelectElementWizard().addTarget(protocol=ProtGlideDockingViewer,
+                               targets=['displayMoleculeDock'],
+                               inputs=['moleculeLabels'],
+                               outputs=['displayMoleculeDock'])
+
+SelectElementWizard().addTarget(protocol=ProtGlideDockingViewer,
+                               targets=['displaySingleDock'],
+                               inputs=['singleLabels'],
+                               outputs=['displaySingleDock'])
+
+SelectElementWizard().addTarget(protocol=ProtGlideDockingViewer,
+                               targets=['displayPymolPLIP'],
+                               inputs=['singleLabels'],
+                               outputs=['displayPymolPLIP'])
