@@ -39,3 +39,5 @@ from .protocol_mm_gbsa import ProtSchrodingerMMGBSA
 from .protocol_induced_fit_docking import ProtSchrodingerIFD
 from .protocol_qsar_model import ProtSchrodingerQSAR
 from .protocol_test_qsar_model import ProtSchrodingerQSARTest
+from .protocol_fep_rbfe import ProtSchrodingerFepRBFE
+from .protocol_fep_abfe import ProtSchrodingerFepABFE

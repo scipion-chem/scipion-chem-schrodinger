@@ -188,6 +188,52 @@ class SchrodingerBindingSites(data.EMFile):
         data.EMFile.__init__(self, **kwargs)
 
 
+class SchrodingerFEPResult(data.EMFile):
+    """Wraps the raw output of an alchemical free-energy (FEP+) job - the ".fmp"/pose-
+    viewer/log file(s) fep_plus (RBFE) or the ABFE driver produce for one ligand pair
+    (RBFE edge) or one ligand (ABFE) - plus, if parsing succeeded, the resulting free
+    energy. Modelled on gromacs.objects.GromacsSystem's own
+    setFreeEnergy/setFreeEnergyFile pair, so downstream code that already knows that
+    convention (e.g. a viewer, or a follow-up protocol) can read either object the same
+    way. See claude/decisions/schrodinger/fep_plus.md for why the free energy may be
+    None here far more often than in the GROMACS case: this plugin's FEP+ log parser is
+    unverified (never checked against a real FEP+ log), so the raw file(s) - not the
+    parsed number - are the trustworthy part of this object."""
+    def __init__(self, **kwargs):
+        data.EMFile.__init__(self, **kwargs)
+        self._freeEnergy = Float(kwargs.get('freeEnergy', None))
+        self._freeEnergyFile = String(kwargs.get('freeEnergyFile', None))
+        self._ligandA = String(kwargs.get('ligandA', None))
+        self._ligandB = String(kwargs.get('ligandB', None))  # unset for ABFE (one ligand only)
+
+    def __str__(self):
+        label = f'{self._ligandA.get()}'
+        if self._ligandB.get():
+            label += f' -> {self._ligandB.get()}'
+        dG = self.getFreeEnergy()
+        return f'{self.getClassName()} ({label}{f", dG={dG:.2f} kcal/mol" if dG is not None else ""})'
+
+    def setFreeEnergy(self, value):
+        self._freeEnergy.set(value)
+
+    def getFreeEnergy(self):
+        return self._freeEnergy.get()
+
+    def setFreeEnergyFile(self, fn):
+        self._freeEnergyFile.set(fn)
+
+    def getFreeEnergyFile(self):
+        return self._freeEnergyFile.get()
+
+    def setLigands(self, ligandA, ligandB=None):
+        self._ligandA.set(ligandA)
+        if ligandB is not None:
+            self._ligandB.set(ligandB)
+
+    def getLigands(self):
+        return self._ligandA.get(), self._ligandB.get()
+
+
 class SchrodingerQSARModel(data.EMObject):
     """Object to store a Phase QSAR model and its metadata."""
 
