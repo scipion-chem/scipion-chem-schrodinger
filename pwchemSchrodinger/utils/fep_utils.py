@@ -39,6 +39,7 @@ CLI detail says so in its own docstring, instead of presenting a guess as a conf
 
 import os
 import re
+import shutil
 
 from pwchem.utils import convertToSdf
 
@@ -57,6 +58,24 @@ progLigPrep = schrodingerPlugin.getHome('ligprep')
 progPrepWizard = schrodingerPlugin.getHome('utilities/prepwizard')
 
 MAEFILE_EXTENSION = '.maegz'
+
+
+def convertMaeToMol2(protocol, molFile, outDir):
+    """Real, correct -> .mol2 conversion for RDKit fingerprinting (used by
+    computeLigandEdgeChain below), for any input format structconvert reads directly -
+    confirmed for both ".mae"/".maegz" (Glide docking output) and ".cif" (pwchem's own
+    ProtExtractLigands output). Despite the name (kept because ".mae" is the single most
+    common real caller), it is not mae-specific. Deliberately NOT
+    pwchemSchrodinger.utils.utils.convertMAE2Mol2File: despite its name, that function
+    builds its output path from the INPUT file's own basename (`os.path.split(molFile)[-1]`
+    - i.e. it keeps the original extension, e.g. still ".maegz"), so structconvert ends up
+    doing a same-format copy, not an actual conversion to ".mol2" - a real, pre-existing bug
+    in that utility found by reading it before reusing it, not introduced here. This
+    version builds the output filename with an explicit ".mol2" extension instead."""
+    outFile = os.path.join(outDir, os.path.splitext(os.path.basename(molFile))[0] + '.mol2')
+    protocol.runJob(structConvertProg, f'{os.path.abspath(molFile)} {os.path.abspath(outFile)}',
+                    cwd=outDir)
+    return outFile
 
 
 def prepareReceptorMae(protocol, pdbFile, outDir, prepare=True):
@@ -81,7 +100,18 @@ def prepareLigandMae(protocol, molFile, outDir, molName, prepare=True):
     convert choice as ProtSchrodingerMMGBSA.prepareLigandFile. Ionization/tautomerization
     (if prepare=True) can shift the docked pose slightly; disable it to keep the exact
     input pose unchanged (e.g. when the pose is already a genuine Schrodinger/LigPrep
-    output)."""
+    output).
+
+    Real bug found by actually running this against a Glide-docked ligand (already
+    ".maegz"): every caller (both FEP+ protocols' own _ligandMaeFile()) assumes this
+    function's output always lands at "outDir/<molName>.maegz" - true for the LigPrep and
+    structconvert branches below (they explicitly write there), but the "already .mae/
+    .maegz, nothing to do" branch used to just return the ORIGINAL file's own path
+    unchanged, wherever that happened to be (e.g. a sibling docking protocol's own extra/
+    directory) - so the caller's assumed path was never actually created, and the next
+    step (building the pose-viewer file) failed with "Input file does not exist". Fixed by
+    always copying into outDir/<molName>.maegz in that branch too, same contract as the
+    other two."""
     if not molFile.endswith('.sdf') and not molFile.endswith(('.mae', '.maegz')):
         molFile = convertToSdf(protocol, molFile)
 
@@ -92,7 +122,9 @@ def prepareLigandMae(protocol, molFile, outDir, molName, prepare=True):
         maeFile = os.path.abspath(os.path.join(outDir, molName + MAEFILE_EXTENSION))
         os.rename(tmpMaeFile, maeFile)
     elif molFile.endswith(('.mae', '.maegz')):
-        maeFile = os.path.abspath(molFile)
+        maeFile = os.path.abspath(os.path.join(outDir, molName + MAEFILE_EXTENSION))
+        if os.path.abspath(molFile) != maeFile:
+            shutil.copy(molFile, maeFile)
     else:
         maeFile = os.path.abspath(os.path.join(outDir, molName + MAEFILE_EXTENSION))
         protocol.runJob(structConvertProg, f'{molFile} {maeFile}', cwd=outDir)
@@ -105,10 +137,11 @@ def buildPoseViewerFile(protocol, receptorMae, ligandMaeFiles, outFile):
     already follows - see ProtSchrodingerGlideDocking's "*_pv.maegz"). This is the input
     shape both fep_plus (RBFE, 1 receptor + 2 co-aligned ligands sharing a common core)
     and the ABFE driver (1 receptor + 1 ligand) are documented to accept as either a
-    ".mae" or ".fmp" positional argument (real, publicly-documented CLI examples for
-    fep_plus - see claude/decisions/schrodinger/fep_plus.md §3 - show a plain "<mae-file>"
-    positional argument; unlike Glide's own PV output, structcat does not gzip its own
-    output by default so the ".mae" (not ".maegz") extension below is deliberate)."""
+    ".mae" or ".fmp" positional argument. Callers should name `outFile` with a ".maegz"
+    extension - confirmed for real (structcat on a real 4erf pose-viewer file) that
+    structcat, like every other Schrodinger CLI tool in this plugin, compresses its own
+    output automatically based on that extension (real gzip magic bytes in the result),
+    not a plain-text ".mae" left mis-named."""
     files = ' '.join(f'-imae {f}' for f in [receptorMae] + list(ligandMaeFiles))
     args = f'{files} -omae {outFile}'
     protocol.runJob(structCatProg, args, cwd=os.path.dirname(outFile) or '.')

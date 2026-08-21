@@ -183,8 +183,17 @@ class ProtSchrodingerFepABFE(EMProtocol):
 
     # -- 0. Receptor / ligand preparation --------------------------------------------
     def _getReceptorPdb(self):
+        """Despite the name (kept for the internal _receptorMaeFile naming convention
+        below), this returns whatever format the receptor already is in if Schrodinger's
+        own tools can consume it directly - real bug found by actually running this
+        protocol: a Glide-docked SetOfSmallMolecules' getProteinFile() is already a
+        Maestro ".maegz" (prepwizard/ligprep/structconvert all accept that directly, per
+        their own usage text), but pwem's toPdb() has no idea how to read Maestro format
+        and silently produced no output file at all, so prepwizard then failed with
+        "File does not exist" on the never-written .pdb. Only structures pwem's own
+        converters actually understand (.pdb/.pdbqt) still go through a real conversion."""
         proteinFile = self.inputSetOfMols.get().getProteinFile()
-        if proteinFile.endswith('.pdb'):
+        if proteinFile.endswith(('.mae', '.maegz', '.pdb')):
             return os.path.abspath(proteinFile)
         pdbFile = self._getTmpPath(getBaseName(proteinFile) + '.pdb')
         if proteinFile.endswith('.pdbqt'):
@@ -213,8 +222,18 @@ class ProtSchrodingerFepABFE(EMProtocol):
 
     # -- 1. Pose-viewer assembly --------------------------------------------------------
     def _pvFile(self):
+        """Real bug found by actually running this protocol: this must be absolute.
+        buildPoseViewerFile derives its subprocess `cwd` from os.path.dirname(outFile);
+        if outFile is instead a path relative to the protocol's own working directory
+        (as self._getExtraPath() returns, confirmed here - Scipion's own status log prints
+        a relative "workingDir: Runs/<id>_.../"), the subprocess resolves the *same*
+        relative "-omae" argument a second time against that already-redirected cwd,
+        silently doubling the path (observed for real: "extra/Runs/<id>.../extra/..." in
+        structcat's own "cannot be opened" error) - the identical relative-path/cwd
+        double-nesting bug already documented and fixed repeatedly in this codebase's
+        GROMACS pmx protocols (claude/decisions/amber/pmx_RBFE.md §9)."""
         molName = self.getSpecifiedMol().getMolName()
-        return self._getExtraPath(f'{molName}_pv.maegz')
+        return os.path.abspath(self._getExtraPath(f'{molName}_pv.maegz'))
 
     def buildPVStep(self):
         buildPoseViewerFile(self, self._receptorMaeFile(), [self._ligandMaeFile()], self._pvFile())
@@ -255,19 +274,29 @@ class ProtSchrodingerFepABFE(EMProtocol):
         fmpFile = self._fepResultFmp()
         ligandName = self.inputLigand.get()
 
-        dgByTitle = {}
-        if fmpFile:
-            csvFile = self._getExtraPath(f'{self._jobName()}_results.csv')
-            if runFmp2Excel(self, fmpFile, csvFile, cwd=self._getExtraPath()):
-                dgByTitle = parseFmpCsv(csvFile, ligandNames=[ligandName])
+        if fmpFile is None:
+            # Same real bug class found and fixed in ProtSchrodingerFepRBFE.createOutputStep:
+            # a "successful" (zero-exit) fep_absolute_binding/multisim run does not guarantee
+            # a real .fmp was produced - don't manufacture a fake-looking output backed by
+            # run.stdout when it wasn't. See that method's comment and
+            # claude/decisions/schrodinger/fep_plus.md for the concrete failure mode
+            # (ProductNotAvailableError / missing scisol.packages.fep on this machine).
+            raise RuntimeError(
+                f'No .fmp result file was produced for ligand {ligandName}. '
+                f'fep_absolute_binding exited without a usable result - check '
+                f'{self._getLogsPath("run.stdout")} for the real failure.')
 
-        outFEP = SchrodingerFEPResult(filename=fmpFile or self._getLogsPath('run.stdout'))
+        csvFile = self._getExtraPath(f'{self._jobName()}_results.csv')
+        dgByTitle = {}
+        if runFmp2Excel(self, fmpFile, csvFile, cwd=self._getExtraPath()):
+            dgByTitle = parseFmpCsv(csvFile, ligandNames=[ligandName])
+
+        outFEP = SchrodingerFEPResult(filename=fmpFile)
         outFEP.setLigands(ligandName)
         if dgByTitle:
             molName = self.getSpecifiedMol().getMolName()
             outFEP.setFreeEnergy(dgByTitle.get(molName, next(iter(dgByTitle.values()))))
-        if fmpFile:
-            outFEP.setFreeEnergyFile(fmpFile)
+        outFEP.setFreeEnergyFile(fmpFile)
 
         self._defineOutputs(outputFEP=outFEP)
         self._defineSourceRelation(self.inputSetOfMols, outFEP)
@@ -301,7 +330,7 @@ class ProtSchrodingerFepABFE(EMProtocol):
         if self.isFinished():
             out = getattr(self, 'outputFEP', None)
             if out is not None:
-                dG = out.get().getFreeEnergy()
+                dG = out.getFreeEnergy()
                 summary.append(f'{self.inputLigand.get()}: '
                               f'{f"dG_bind = {dG:.2f} kcal/mol" if dG is not None else "see raw .fmp"}')
         else:

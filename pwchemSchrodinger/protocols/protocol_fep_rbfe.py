@@ -97,7 +97,8 @@ from pwchem.utils import pdbqt2other, getBaseName
 from .. import Plugin as schrodingerPlugin
 from ..objects import SchrodingerFEPResult
 from ..utils.fep_utils import (prepareReceptorMae, prepareLigandMae, buildPoseViewerFile,
-                               computeLigandEdgeChain, getEdgeName, runFmp2Excel, parseFmpCsv)
+                               computeLigandEdgeChain, getEdgeName, runFmp2Excel, parseFmpCsv,
+                               convertMaeToMol2)
 
 progFepPlus = schrodingerPlugin.getHome('fep_plus')
 
@@ -273,16 +274,39 @@ class ProtSchrodingerFepRBFE(EMProtocol):
         raise ValueError(f'Ligand "{name}" not found in the input set of molecules')
 
     def _molFileForFingerprint(self, name):
+        """RDKit (via fep_utils.computeLigandEdgeChain) only reads .mol2/.sdf/.pdb - a
+        real ligand pose here can be native Schrodinger .mae/.maegz (Glide docking output)
+        or .cif (pwchem's own ProtExtractLigands output - confirmed real via the JNK1
+        benchmark test: RDKit silently failed to fingerprint every ligand and the 2-ligand
+        edge fell back to selection order, harmless here since 2 items only have one
+        possible pairing anyway, but would matter for a real 3+-ligand chain). Neither
+        format is RDKit-readable directly. Real gap found alongside the receptor .maegz
+        bug above: without this conversion, computeLigandEdgeChain's RDKit parse silently
+        fails for every ligand and the whole chain quietly degrades to plain selection
+        order - never a crash (by design), but never using real structural similarity
+        either. structconvert (used by convertMaeToMol2, despite its name) reads .cif
+        directly and correctly, same as .mae/.maegz."""
         mol = self._getMolByName(name)
         molFile = mol.getPoseFile()
         if molFile.endswith('.pdbqt'):
             molFile = pdbqt2other(self, molFile, self._getTmpPath(getBaseName(molFile) + '.pdb'))
+        elif molFile.endswith(('.mae', '.maegz', '.cif')):
+            molFile = convertMaeToMol2(self, molFile, self._getTmpPath())
         return os.path.abspath(molFile)
 
     # -- 0. Receptor (shared across every edge) --------------------------------------
     def _getReceptorPdb(self):
+        """Despite the name (kept for the internal _receptorMaeFile naming convention
+        below), this returns whatever format the receptor already is in if Schrodinger's
+        own tools can consume it directly - real bug found by actually running this
+        protocol: a Glide-docked SetOfSmallMolecules' getProteinFile() is already a
+        Maestro ".maegz" (prepwizard/ligprep/structconvert all accept that directly, per
+        their own usage text), but pwem's toPdb() has no idea how to read Maestro format
+        and silently produced no output file at all, so prepwizard then failed with
+        "File does not exist" on the never-written .pdb. Only structures pwem's own
+        converters actually understand (.pdb/.pdbqt) still go through a real conversion."""
         proteinFile = self.inputSetOfMols.get().getProteinFile()
-        if proteinFile.endswith('.pdb'):
+        if proteinFile.endswith(('.mae', '.maegz', '.pdb')):
             return os.path.abspath(proteinFile)
         pdbFile = self._getTmpPath(getBaseName(proteinFile) + '.pdb')
         if proteinFile.endswith('.pdbqt'):
@@ -326,13 +350,16 @@ class ProtSchrodingerFepRBFE(EMProtocol):
         if self.precomputedFmpFile.get():
             return
         edgeDir = self._edgeDir(edgeIdx)
-        pvFile = os.path.join(edgeDir, f'{getEdgeName(ligA, ligB)}_pv.maegz')
         buildPoseViewerFile(self, self._receptorMaeFile(),
                            [self._ligandMaeFile(edgeDir, ligA), self._ligandMaeFile(edgeDir, ligB)],
-                           pvFile)
+                           self._pvFile(edgeIdx, ligA, ligB))
 
     def _pvFile(self, edgeIdx, ligA, ligB):
-        return os.path.join(self._edgeDir(edgeIdx), f'{getEdgeName(ligA, ligB)}_pv.maegz')
+        """Real bug found by actually running this protocol: this must be absolute - see
+        the identical fix (and full explanation) in ProtSchrodingerFepABFE._pvFile. This
+        used to be built inline a second time (slightly differently) inside buildPVStep
+        without the abspath wrapper either - both are now this one method."""
+        return os.path.abspath(os.path.join(self._edgeDir(edgeIdx), f'{getEdgeName(ligA, ligB)}_pv.maegz'))
 
     # -- 3. fep_plus job ------------------------------------------------------------------
     def _fepPlusArgs(self):
@@ -384,21 +411,38 @@ class ProtSchrodingerFepRBFE(EMProtocol):
         edgeDir = self._edgeDir(edgeIdx)
         fmpFile = self._fepResultFmp(edgeIdx, ligA, ligB)
 
-        dgByTitle = {}
-        if fmpFile:
-            csvFile = os.path.join(edgeDir, f'{getEdgeName(ligA, ligB)}_results.csv')
-            if runFmp2Excel(self, fmpFile, csvFile, cwd=edgeDir):
-                dgByTitle = parseFmpCsv(csvFile, ligandNames=[ligA, ligB])
+        if fmpFile is None:
+            # Real bug found by actually running this against a live install: fep_plus's
+            # own multisim wrapper exits 0 (self.runJob raises nothing) even when an early
+            # stage - fep_mapper, which builds the perturbation map before any real FEP
+            # simulation runs - fails and every subsequent stage (including fep_launcher,
+            # the actual production MD/FEP sampling) is skipped. On this specific machine
+            # that happens with "ERROR: No compatible scisol installation found" (see
+            # claude/decisions/schrodinger/fep_plus.md), the same underlying gap as ABFE's
+            # ProductNotAvailableError, just surfaced as a soft multisim skip instead of a
+            # hard crash. Silently substituting run.stdout as the output "file" here would
+            # produce a SchrodingerFEPResult that looks real but carries no free-energy
+            # data at all - raise instead of manufacturing a fake-looking success.
+            multisimLog = os.path.join(edgeDir, f'{getEdgeName(ligA, ligB)}_multisim.log')
+            raise RuntimeError(
+                f'No .fmp result file was produced for edge {ligA} -> {ligB}. fep_plus '
+                f'exited without error, but the real FEP simulation likely never ran - '
+                f'check {multisimLog} for a stage that failed or was skipped '
+                f'(e.g. "ERROR: No compatible scisol installation found" in fep_mapper).')
 
-        outFEP = SchrodingerFEPResult(filename=fmpFile or self._getLogsPath('run.stdout'))
+        csvFile = os.path.join(edgeDir, f'{getEdgeName(ligA, ligB)}_results.csv')
+        dgByTitle = {}
+        if runFmp2Excel(self, fmpFile, csvFile, cwd=edgeDir):
+            dgByTitle = parseFmpCsv(csvFile, ligandNames=[ligA, ligB])
+
+        outFEP = SchrodingerFEPResult(filename=fmpFile)
         outFEP.setLigands(ligA, ligB)
         if dgByTitle:
             # Relative dG of ligand B with respect to A is what an A->B edge computes;
             # prefer B's row if present (the "new" compound), else whatever was found.
             ligBMolName = self._getMolByName(ligB).getMolName()
             outFEP.setFreeEnergy(dgByTitle.get(ligBMolName, next(iter(dgByTitle.values()))))
-        if fmpFile:
-            outFEP.setFreeEnergyFile(fmpFile)
+        outFEP.setFreeEnergyFile(fmpFile)
 
         self._defineOutputs(**{outputName: outFEP})
         self._defineSourceRelation(self.inputSetOfMols, outFEP)
@@ -435,7 +479,7 @@ class ProtSchrodingerFepRBFE(EMProtocol):
                 outputName = 'outputFEP' if len(edges) <= 1 else f'outputFEP_edge{edgeIdx}'
                 out = getattr(self, outputName, None)
                 if out is not None:
-                    dG = out.get().getFreeEnergy()
+                    dG = out.getFreeEnergy()
                     summary.append(f'{ligA} -> {ligB}: '
                                   f'{f"ddG = {dG:.2f} kcal/mol" if dG is not None else "see raw .fmp"}')
         else:
