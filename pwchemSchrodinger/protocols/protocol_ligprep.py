@@ -28,7 +28,8 @@ import os, time, glob
 
 # Scipion em imports
 from pwem.protocols import EMProtocol
-from pyworkflow.protocol.params import PointerParam, EnumParam, FloatParam, BooleanParam, IntParam, STEPS_PARALLEL
+from pyworkflow.protocol.params import (PointerParam, EnumParam, FloatParam, BooleanParam, IntParam, PathParam,
+                                        STEPS_PARALLEL)
 from pyworkflow.utils.path import copyFile, moveFile, cleanPath
 from pwem.protocols import EMProtocol
 
@@ -47,6 +48,11 @@ progStructConvert=Plugin.getHome('utilities/structconvert')
 OUTPUTATTRIBUTE = "outputSmallMolecules"
 OUTPUTATTRIBUTEDROPPED = "outputSmallMoleculesDropped"
 
+# Input modes
+INPUTSET, INPUTSMI = 0, 1
+# Base name of the single output LigPrep writes when the whole SMILES file is prepared at once
+SMIOUTPUTNAME = "ligPrepSmiles"
+
 class ProtSchrodingerLigPrep(EMProtocol):
     """Schrodinger's LigPrep is a program to prepare ligand libraries
     """
@@ -58,8 +64,18 @@ class ProtSchrodingerLigPrep(EMProtocol):
 
     def _defineParams(self, form):
         form.addSection(label='Input')
+        form.addParam('inputFrom', EnumParam, default=INPUTSET,
+                      choices=['Set of small molecules', 'SMILES file'],
+                      label='Input ligands from:',
+                      help='Prepare the molecules of a set coming from another protocol, or read them '
+                           'directly from a SMILES file, which is handed to LigPrep with its -ismi option.')
         form.addParam('inputSmallMolecules', PointerParam, pointerClass="SetOfSmallMolecules",
-                       label='Set of small molecules:', allowsNull=False)
+                       label='Set of small molecules:', allowsNull=True,
+                       condition=f'inputFrom=={INPUTSET}')
+        form.addParam('smiFile', PathParam, label='SMILES file:', condition=f'inputFrom=={INPUTSMI}',
+                      help='File (.smi) with a SMILES string per line, optionally followed by the identifier '
+                           'of the molecule, which LigPrep keeps as its name. The whole file is prepared by a '
+                           'single LigPrep job, so no previous conversion of the molecules is needed.')
         group = form.addGroup('Ionization')
         group.addParam('ionization', EnumParam, default=0,
                        choices=["None",'Epik (recommended)','Do not neutralize or ionize',
@@ -99,14 +115,21 @@ class ProtSchrodingerLigPrep(EMProtocol):
         # --------------------------- INSERT steps functions --------------------
     def _insertAllSteps(self):
         prepSteps = []
-        for mol in self.inputSmallMolecules.get():
-            pStep = self._insertFunctionStep(self.ligPrepStep, mol.clone(), prerequisites=[])
-            prepSteps.append(pStep)
+        if self.inputFrom.get() == INPUTSMI:
+            prepSteps.append(self._insertFunctionStep(self.ligPrepSmilesStep, prerequisites=[]))
+        else:
+            for mol in self.inputSmallMolecules.get():
+                pStep = self._insertFunctionStep(self.ligPrepStep, mol.clone(), prerequisites=[])
+                prepSteps.append(pStep)
         self._insertFunctionStep(self.createOutputStep, prerequisites=prepSteps)
 
 
     def ligPrepStep(self, mol):
         args = self.getLigPrepArgs(mol)
+        self.runJob(progLigPrep, args, cwd=self._getExtraPath())
+
+    def ligPrepSmilesStep(self):
+        args = self.getLigPrepSmilesArgs()
         self.runJob(progLigPrep, args, cwd=self._getExtraPath())
 
     def createOutputStep(self):
@@ -115,6 +138,10 @@ class ProtSchrodingerLigPrep(EMProtocol):
             os.mkdir(oDir)
 
         self.outputSmallMolecules = SetOfSmallMolecules().create(outputPath=self._getPath(), suffix='SmallMols')
+        if self.inputFrom.get() == INPUTSMI:
+            self.createOutputFromSmiles(oDir)
+            return
+
         outputSmallMoleculesDropped = SetOfSmallMolecules().create(outputPath=self._getPath(), suffix='Dropped')
         for mol in self.inputSmallMolecules.get():
             molName = getBaseName(mol.getFileName())
