@@ -115,17 +115,41 @@ class ProtSchrodingerLigPrep(EMProtocol):
             os.mkdir(oDir)
 
         self.outputSmallMolecules = SetOfSmallMolecules().create(outputPath=self._getPath(), suffix='SmallMols')
+        outputSmallMoleculesDropped = SetOfSmallMolecules().create(outputPath=self._getPath(), suffix='Dropped')
         for mol in self.inputSmallMolecules.get():
-            molFile = mol.getFileName()
-            molFile = self._getExtraPath(f"{getBaseName(molFile)}.sdf")
-            outMolFiles = self.splitIsomers(molFile, oDir)
+            molName = getBaseName(mol.getFileName())
+            molFile = self._getExtraPath(f"{molName}.sdf")
 
+            if not os.path.exists(molFile):
+                droppedFile = self._getExtraPath(f"{molName}-dropped.sdf")
+                if os.path.exists(droppedFile):
+                    # LigPrep ran, but discarded the molecule at one of its processing stages.
+                    print(f"LigPrep dropped molecule '{molName}', "
+                          f"see '{molName}.log' to see why.")
+                    # saveMolecule is not used here: it reads a conformer id from the file name,
+                    # and the "-dropped" suffix is not one.
+                    droppedMol = SmallMolecule()
+                    droppedMol.copy(mol, copyId=False)
+                    droppedMol.setFileName(droppedFile)
+                    outputSmallMoleculesDropped.append(droppedMol.clone())
+                else:
+                    # No output at all: the LigPrep job failed
+                    print(f"LigPrep failed for molecule '{molName}'")
+                continue
+
+            outMolFiles = self.splitIsomers(molFile, oDir)
             for oFile in outMolFiles:
                 self.renameSDFTitle(oFile)
                 saveMolecule(self, oFile, self.outputSmallMolecules, mol)
 
-        self._defineOutputs(**{OUTPUTATTRIBUTE: self.outputSmallMolecules})
+        outputsDict = {OUTPUTATTRIBUTE: self.outputSmallMolecules}
+        if len(outputSmallMoleculesDropped) > 0:
+            outputsDict[OUTPUTATTRIBUTEDROPPED] = outputSmallMoleculesDropped
+
+        self._defineOutputs(**outputsDict)
         self._defineSourceRelation(self.inputSmallMolecules, self.outputSmallMolecules)
+        if len(outputSmallMoleculesDropped) > 0:
+            self._defineSourceRelation(self.inputSmallMolecules, outputSmallMoleculesDropped)
 
 
     def getLigPrepArgs(self, mol):
