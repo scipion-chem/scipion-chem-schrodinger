@@ -24,7 +24,7 @@
 # *
 # **************************************************************************
 # General imports
-import os, time, glob
+import os, re, time, glob
 
 # Scipion em imports
 from pwem.protocols import EMProtocol
@@ -132,10 +132,30 @@ class ProtSchrodingerLigPrep(EMProtocol):
         args = self.getLigPrepSmilesArgs()
         self.runJob(progLigPrep, args, cwd=self._getExtraPath())
 
-    def createOutputStep(self):
+        molFile = self._getExtraPath(f"{getBaseName(mol.getFileName())}.sdf")
+        if os.path.exists(molFile):
+            for oFile in self.splitIsomers(molFile, self.getOutputMolsDir()):
+                self.renameSDFTitle(oFile)
+
+    def getSplitMolFiles(self, oDir):
+        """Files split by the ligPrepSteps, indexed by molecule name. structconvert names them
+        "<molName>.sdf" when a single structure was prepared and "<molName>-<confId>.sdf" if more.
+        The whole directory is read once, it holds a file per structure of the input set."""
+        molFiles = {}
+        for oFile in sorted(os.listdir(oDir)):
+            if oFile.endswith('.sdf'):
+                molName = re.sub(r"-\d+$", '', oFile[:-len('.sdf')])
+                molFiles.setdefault(molName, []).append(os.path.join(oDir, oFile))
+        return molFiles
+
+    def getOutputMolsDir(self):
         oDir = self._getPath('outputMols')
-        if not os.path.exists(oDir):
-            os.mkdir(oDir)
+        # exist_ok instead of makePath, several ligPrepSteps may create it at the same time
+        os.makedirs(oDir, exist_ok=True)
+        return oDir
+
+    def createOutputStep(self):
+        splitMolFiles = self.getSplitMolFiles(self.getOutputMolsDir())
 
         self.outputSmallMolecules = SetOfSmallMolecules().create(outputPath=self._getPath(), suffix='SmallMols')
         if self.inputFrom.get() == INPUTSMI:
@@ -164,9 +184,8 @@ class ProtSchrodingerLigPrep(EMProtocol):
                     print(f"LigPrep failed for molecule '{molName}'")
                 continue
 
-            outMolFiles = self.splitIsomers(molFile, oDir)
-            for oFile in outMolFiles:
-                self.renameSDFTitle(oFile)
+            # Already split and renamed by its ligPrepStep
+            for oFile in splitMolFiles.get(molName, []):
                 saveMolecule(self, oFile, self.outputSmallMolecules, mol)
 
         outputsDict = {OUTPUTATTRIBUTE: self.outputSmallMolecules}
