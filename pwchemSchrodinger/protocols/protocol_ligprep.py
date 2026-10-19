@@ -47,6 +47,8 @@ progStructConvert=Plugin.getHome('utilities/structconvert')
 OUTPUTATTRIBUTE = "outputSmallMolecules"
 OUTPUTATTRIBUTEDROPPED = "outputSmallMoleculesDropped"
 
+LICENSE_RETRIES = 3
+
 class ProtSchrodingerLigPrep(EMProtocol):
     """Schrodinger's LigPrep is a program to prepare ligand libraries
     """
@@ -106,8 +108,17 @@ class ProtSchrodingerLigPrep(EMProtocol):
 
 
     def ligPrepStep(self, mol):
+        outSdf = self._getExtraPath(f"{getBaseName(mol.getFileName())}.sdf")
         args = self.getLigPrepArgs(mol)
-        self.runJob(progLigPrep, args, cwd=self._getExtraPath())
+        for attempt in range(LICENSE_RETRIES):
+            self.runJob(progLigPrep, args, cwd=self._getExtraPath())
+            # ligprep exits 0 even when its backend fails, so the real outcome is the output file
+            logFile = os.path.splitext(outSdf)[0] + '.log'
+            licFail = os.path.exists(logFile) and 'Could not check out a license' in open(logFile).read()
+            if os.path.exists(outSdf) or not licFail:
+                break
+            time.sleep(30 * (attempt + 1))
+        return outSdf
 
     def createOutputStep(self):
         oDir = self._getPath('outputMols')

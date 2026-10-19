@@ -103,7 +103,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                       default=0,
                       help='Choose whether to create a conventional QSAR model or a pharmacophore QSAR.')
 
-        form.addParam('style', StringParam, label='Fields: ', default='ff', condition=FIELD_QSAR,
+        form.addParam('style', StringParam, label='Fields: ', default='ff', condition=self.FIELD_QSAR,
                       help='Fields to include (can be more than one separated with commas): \n'
                            '- ff: all force fields\n'
                            '- ff_s: force field steric (Lennar-Jones)\n'
@@ -117,7 +117,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                            '- gauss: all above gaussian fields\n'
                            '- gauss_r: gaussian aromatic ring\n'
                            '- gauss_ext: gauss + gauss_r')
-        form.addParam('forceField', EnumParam, label='Force field: ', default=1,condition=FIELD_QSAR,
+        form.addParam('forceField', EnumParam, label='Force field: ', default=1,condition=self.FIELD_QSAR,
                       choices=['OPLS_2005', 'OPLS4'],
                       help='Force field from which to draw atom based parameters.')
         form.addParam('train', FloatParam, label='Training partition: ', default=0.8,
@@ -129,7 +129,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                            '- medium datasets (20-100 mols): 5-10\n'
                            '- large datasets (>100 mols): 10')
 
-        group = form.addGroup('Grid and FF params', condition=FIELD_QSAR)
+        group = form.addGroup('Grid and FF params', condition=self.FIELD_QSAR)
         group.addParam('grid', FloatParam, label='Grid spacing (Å):', default=1.0,
                        help='Spacing of field points in angstroms (0.5–4.0)')
         group.addParam('extend', FloatParam, label='Grid extension (Å):', default=3.0,
@@ -146,7 +146,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                        expertLevel=LEVEL_ADVANCED,
                        help='Ignore fields if standard deviation over training set is less than this')
 
-        group = form.addGroup('Molecule preparation params',condition=PHARM_QSAR)
+        group = form.addGroup('Molecule preparation params',condition=self.PHARM_QSAR)
         group.addParam('epik', EnumParam, label='Epik version: ', choices=['Classic', 'Modern'],
                        default=1,
                        help='Epik version to use for ionization.')
@@ -166,7 +166,7 @@ class ProtSchrodingerQSAR(EMProtocol):
                        choices=['OPLS_2005', 'S-OPLS'],
                        help=' Force-field to be used for the final geometry optimization.')
 
-        group = form.addGroup('Phase project params',condition=PHARM_QSAR)
+        group = form.addGroup('Phase project params',condition=self.PHARM_QSAR)
         group.addParam('active', FloatParam, label='Active threshold: ', default=7.0,
                        help='Good binders with pIC50>=*threshold*.')
         group.addParam('inactive', FloatParam, label='Inactive threshold: ', default=5.5,
@@ -174,7 +174,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         group.addParam('repr', IntParam, label='Number of representatives: ', default=30,
                        help='How many actives to keep as representatives.')
 
-        group = form.addGroup('Pharmacophore discovery params',condition=PHARM_QSAR)
+        group = form.addGroup('Pharmacophore discovery params',condition=self.PHARM_QSAR)
         group.addParam('sites', StringParam, label='Pharmacophore size: ', default='4:6',
                        help='Search each reference ligand for common pharmacophores containing between <min> and <max> sites. The legal range is 3:7. The actual searchproceeds from <max> down to <min>, and halts before reaching <min> if common pharmacophores containing more than <min> sites are found. Use -ex to force the full range to be considered. This procedure is followed independently for each reference ligand conformer, so it is still possible to obtain common pharmacophores that contain different numbers of sites even if -ex is not used.')
         group.addParam('miss', IntParam, label='Maximum misses (flexibility): ', default=1,
@@ -199,7 +199,7 @@ class ProtSchrodingerQSAR(EMProtocol):
         group.addParam('select', FloatParam, label='Selectivity score weight: ', default=1, expertLevel=LEVEL_ADVANCED,
                        help='Selectivity score weight to use when computing Survival score.')
 
-        group = form.addGroup('QSAR model params',condition=PHARM_QSAR)
+        group = form.addGroup('QSAR model params',condition=self.PHARM_QSAR)
         group.addParam('stylePharm', EnumParam, label='Style: ', choices=['atom', 'pharmacophore'],
                        default=0,
                        help='Indicates whether models should be created from atoms or pharmacophore sites.')
@@ -256,49 +256,28 @@ class ProtSchrodingerQSAR(EMProtocol):
         self._writeCsv(smilesCsv, updatedRows, fieldnames)
 
     def checkActivityStep(self):
-        csvFile = self.inputFile.get()
-        extraPath = self._getExtraPath()
-        destFile = os.path.join(extraPath, os.path.basename(csvFile))
+        rows, fieldnames = self._readCsv(self.inputFile.get())
+        fieldnames = fieldnames or []
+        destFile = self._getExtraPath(self.csvFile)
 
-        shutil.copy(csvFile, destFile)
-
-        with open(csvFile, "r", newline="") as f:
-            reader = csv.DictReader(f)
-            fieldnames = reader.fieldnames
-        if not fieldnames:
-            return
         if "pIC50" in fieldnames:
-            print("pIC50 already present. No changes made.")
+            self._writeCsv(destFile, rows, fieldnames)
             return
         if "IC50" not in fieldnames:
-            print("No IC50 or pIC50 column found.")
-            return
-        rows = []
-        for row in reader:
-            value = row.get("IC50")
+            raise ValueError("The activity CSV needs an 'IC50' (nM) or a 'pIC50' column. "
+                             f"Columns found: {fieldnames}")
 
-            if not value:
-                continue
+        outRows = []
+        for row in rows:
             try:
-                value = float(value)
-            except:
+                value = float(row.pop("IC50"))
+            except (TypeError, ValueError):
                 continue
+            if value > 0:
+                row["pIC50"] = 9 - math.log10(value)
+                outRows.append(row)
 
-            if value <= 0:
-                continue
-            pIC50 = 9 - math.log10(value)
-
-            row["pIC50"] = pIC50
-            del row["IC50"]
-
-            rows.append(row)
-
-        newFieldnames = [f for f in fieldnames if f != "IC50"] + ["pIC50"]
-
-        with open(csvFile, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=newFieldnames)
-            writer.writeheader()
-            writer.writerows(rows)
+        self._writeCsv(destFile, outRows, [f for f in fieldnames if f != "IC50"])
 
     def getpIC50Step(self):
         targets = self._getTargets()
