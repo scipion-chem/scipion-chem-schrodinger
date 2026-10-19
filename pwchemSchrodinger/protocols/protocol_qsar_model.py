@@ -256,49 +256,28 @@ class ProtSchrodingerQSAR(EMProtocol):
         self._writeCsv(smilesCsv, updatedRows, fieldnames)
 
     def checkActivityStep(self):
-        csvFile = self.inputFile.get()
-        extraPath = self._getExtraPath()
-        destFile = os.path.join(extraPath, os.path.basename(csvFile))
+        rows, fieldnames = self._readCsv(self.inputFile.get())
+        fieldnames = fieldnames or []
+        destFile = self._getExtraPath(self.csvFile)
 
-        shutil.copy(csvFile, destFile)
-
-        with open(csvFile, "r", newline="") as f:
-            reader = csv.DictReader(f)
-            fieldnames = reader.fieldnames
-        if not fieldnames:
-            return
         if "pIC50" in fieldnames:
-            print("pIC50 already present. No changes made.")
+            self._writeCsv(destFile, rows, fieldnames)
             return
         if "IC50" not in fieldnames:
-            print("No IC50 or pIC50 column found.")
-            return
-        rows = []
-        for row in reader:
-            value = row.get("IC50")
+            raise ValueError("The activity CSV needs an 'IC50' (nM) or a 'pIC50' column. "
+                             f"Columns found: {fieldnames}")
 
-            if not value:
-                continue
+        outRows = []
+        for row in rows:
             try:
-                value = float(value)
-            except:
+                value = float(row.pop("IC50"))
+            except (TypeError, ValueError):
                 continue
+            if value > 0:
+                row["pIC50"] = 9 - math.log10(value)
+                outRows.append(row)
 
-            if value <= 0:
-                continue
-            pIC50 = 9 - math.log10(value)
-
-            row["pIC50"] = pIC50
-            del row["IC50"]
-
-            rows.append(row)
-
-        newFieldnames = [f for f in fieldnames if f != "IC50"] + ["pIC50"]
-
-        with open(csvFile, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=newFieldnames)
-            writer.writeheader()
-            writer.writerows(rows)
+        self._writeCsv(destFile, outRows, [f for f in fieldnames if f != "IC50"])
 
     def getpIC50Step(self):
         targets = self._getTargets()
