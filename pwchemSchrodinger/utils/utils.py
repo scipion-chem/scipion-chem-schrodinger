@@ -36,7 +36,8 @@ import pyworkflow.object as pwobj
 # Scipion chem imports
 from pwchem.objects import SmallMolecule
 from pwchem.utils import relabelAtomsMol2, runInParallel, getBaseName, filterCifCols, addCifCols, writeCifBlocks
-from pwchem.constants import CIF_DEF_COLS
+from pwchem.constants import CIF_DEF_COLS, RDKIT_DIC
+from pwchem import Plugin as pwchemPlugin
 
 
 # Plugin imports
@@ -211,7 +212,7 @@ def convertMAEMolSet(molSet, outDir, njobs, updateSet=True, subset=True):
         return convMols
 
 def isMaeFile(molFile):
-    return molFile.endswith('.mae') or molFile.endswith('.maegz')
+    return molFile.endswith(('.mae', '.maegz'))
 
 def convertReceptor2PDB(maeFile, outPDB=None, cwd=None):
     name, ext = os.path.splitext(maeFile)
@@ -329,3 +330,15 @@ def setAborted(jobId, jobName):
     if jobId:
         print('Killing job: {} with jobName {}'.format(jobId, jobName))
         check_call(jobControlProg + ' -kill {}'.format(jobId), shell=True)
+
+def createSdf(protocol,csvFile, molFile):
+    script = "csvToSDF.py"
+    args = [os.path.abspath(csvFile), os.path.abspath(molFile), 'true']
+
+    pwchemPlugin.runScript(
+        protocol,
+        script,
+        args,
+        env=RDKIT_DIC,
+        cwd=protocol._getPath(),
+        scriptDir=os.path.join(os.path.dirname(__file__), "../scripts"))
