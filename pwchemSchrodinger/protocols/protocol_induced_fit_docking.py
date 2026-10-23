@@ -437,10 +437,11 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
   def createOutputStep(self):
       nt = self.numberOfThreads.get()
       smallDict = {}
+      # Output titles can be the file basename (e.g. LigPrep states "<mol>-1") or the molName, as in Glide
       for mol in self.inputLibrary.get():
-          fnBase = mol.getMolName()
-          if fnBase not in smallDict:
-              smallDict[fnBase] = mol.clone()
+          for key in (getBaseName(mol.getFileName()), mol.getMolName()):
+              if key not in smallDict:
+                  smallDict[key] = mol.clone()
 
       gridDirs = self.getGridDirs(complete=True)
       allSmallList = performBatchThreading(self.performOutputParsing, gridDirs, nt, cloneItem=False,
@@ -474,14 +475,12 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
       # Manage files from autodock: 1) Convert to readable by schro (SDF). 2) correct preparation.
       # 3) Switch to mol2 to manage atom labels
       outDir = os.path.abspath(self._getTmpPath())
-      args = ' -i "{}" -of sdf --outputDir "{}" --outputName {}_AD4.sdf'.format(os.path.abspath(fnSmall),
-                                                                      os.path.abspath(outDir), baseName)
-
-      pwchemPlugin.runScript(self, 'obabel_IO.py', args, env=OPENBABEL_DIC, cwd=outDir)  # blocking
-      auxFile = os.path.abspath(os.path.join(outDir, '{}_AD4.sdf'.format(baseName)))
-      while not os.path.exists(auxFile):
-        time.sleep(0.2)
-      fnSmall = auxFile
+      args = ' -i "{}" -of sdf --outputDir "{}" --outputName {}_AD4'.format(os.path.abspath(fnSmall),
+                                                                            os.path.abspath(outDir), baseName)
+      pwchemPlugin.runScript(self, 'obabel_IO.py', args, env=OPENBABEL_DIC, cwd=outDir)
+      fnSmall = os.path.abspath(os.path.join(outDir, '{}_AD4.sdf'.format(baseName)))
+      if not os.path.exists(fnSmall):
+        raise FileNotFoundError(f'OpenBabel did not convert {baseName} to SDF: {fnSmall}')
 
     args = "{} {}".format(fnSmall, outFile)
     subprocess.check_call([structConvertProg, *args.split()])
@@ -739,12 +738,7 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
   def getBindingSiteCenter(self, pocket=None):
     if self.fromPockets.get() == AS:
       pocketId = None
-      inAS = self.inputAtomStruct.get()
-      pdbFile = inAS.getFileName()
-      if not pdbFile.endswith('.pdb'):
-        pdbFile = inAS.convert2PDB(self._getExtraPath('inputStructure.pdb'))
-
-      _, x, y, z = calculate_centerMass(pdbFile)
+      _, x, y, z = calculate_centerMass(self.inputAtomStruct.get().getFileName())
     elif self.fromPockets.get() == POCKET:
       pocketId = pocket.getObjId()
       x, y, z = pocket.calculateMassCenter()
@@ -757,7 +751,7 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
 
   def getDiameter(self, msjDic, pocket=None):
     if self.fromPockets.get() == AS:
-      d = 2 * msjDic['radius']
+      d = 2 * self.radius.get()
     elif self.fromPockets.get() == POCKET:
       d = pocket.getDiameter()
     return d
