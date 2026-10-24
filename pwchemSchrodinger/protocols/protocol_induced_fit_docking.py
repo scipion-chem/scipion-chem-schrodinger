@@ -49,7 +49,7 @@ propListerProg = schrodingerPlugin.getHome('utilities/proplister')
 ifdProg = schrodingerPlugin.getHome('ifd')
 runPath = schrodingerPlugin.getHome('run')
 
-splitProg = schrodingerPlugin.getMMshareDir('python/common/split_structure.py')
+splitScript = schrodingerPlugin.getPluginHome('scripts/splitIFDComplexes.py')
 closeScript = schrodingerPlugin.getPluginHome('scripts/getCloseResidues.py')
 
 
@@ -410,6 +410,8 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
 
       subprocess.run(f'{propListerProg} -p "s_m_title" -p "r_i_docking_score" {scoreNamesStr}'
                      f'-c -o {propFile} {outFile}', cwd=gridDir, check=True, capture_output=True, text=True, shell=True)
+      # All complexes split at once into receptor + docked ligand, named by title and pose number
+      subprocess.run([runPath, splitScript, outFile, gridDir], cwd=gridDir, check=True, capture_output=True, text=True)
 
       smallList, posDic = [], {}
       with open(propFile) as f:
@@ -419,7 +421,8 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
           title, glideEnergy = tokens[:2]
           posDic[title] = 1 if title not in posDic else posDic[title] + 1
 
-          recFile, posFile = self.splitComplexFiles(outFile, gridDir, title, posDic[title])
+          splitBase = os.path.join(gridDir, f'ifd_{title}_{posDic[title]}')
+          recFile, posFile = splitBase + '_receptor.maegz', splitBase + '_ligand.maegz'
 
           small = SmallMolecule()
           small.copy(smallDict[title], copyId=False)
@@ -793,20 +796,6 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
         if scoreName:
           scoreNames.append(scoreName)
     return scoreNames
-
-  def splitComplexFiles(self, oFile, oDir, title, idx):
-    complexFile = os.path.join(oDir, f'ifd_{title}_{idx}.maegz')
-    args = f' -n {idx} {oFile} {complexFile}'
-    subprocess.run(f'{structConvertProg} {args}', check=True, capture_output=True, text=True, shell=True, cwd=oDir)
-
-    args = f' -m pdb -many_files {complexFile} {complexFile}'
-    subprocess.run(f'{runPath} {splitProg} {args}', check=True, capture_output=True, text=True, shell=True,
-                   cwd=oDir)
-
-    os.remove(complexFile)
-    recFile, molFile = complexFile.replace('.maegz', '_receptor1.maegz'), \
-                       complexFile.replace('.maegz', '_ligand1.maegz')
-    return recFile, molFile
 
 
 
