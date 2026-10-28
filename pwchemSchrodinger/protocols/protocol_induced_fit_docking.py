@@ -49,7 +49,7 @@ propListerProg = schrodingerPlugin.getHome('utilities/proplister')
 ifdProg = schrodingerPlugin.getHome('ifd')
 runPath = schrodingerPlugin.getHome('run')
 
-splitProg = schrodingerPlugin.getMMshareDir('python/common/split_structure.py')
+splitScript = schrodingerPlugin.getPluginHome('scripts/splitIFDComplexes.py')
 closeScript = schrodingerPlugin.getPluginHome('scripts/getCloseResidues.py')
 
 
@@ -372,6 +372,11 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
     # Create ligand files
     ligSet = self.inputLibrary.get()
     performBatchThreading(self.createLigandsFile, ligSet, nt)
+    # Errors inside the threads are not raised, so check that every ligand was converted
+    missing = [small.getFileName() for small in ligSet if not os.path.exists(self.getLigandMaeFile(small.getFileName()))]
+    if missing:
+      raise RuntimeError(f'{len(missing)} ligands could not be converted to Maestro (see run.stderr): '
+                         + ', '.join(map(os.path.basename, missing)))
 
     allLigandsFile = self.getAllLigandsFile()
     with open(allLigandsFile, 'w') as f:
@@ -405,6 +410,8 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
 
       subprocess.run(f'{propListerProg} -p "s_m_title" -p "r_i_docking_score" {scoreNamesStr}'
                      f'-c -o {propFile} {outFile}', cwd=gridDir, check=True, capture_output=True, text=True, shell=True)
+      # All complexes split at once into receptor + docked ligand, named by title and pose number
+      subprocess.run([runPath, splitScript, outFile, gridDir], cwd=gridDir, check=True, capture_output=True, text=True)
 
       smallList, posDic = [], {}
       with open(propFile) as f:
@@ -414,7 +421,8 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
           title, glideEnergy = tokens[:2]
           posDic[title] = 1 if title not in posDic else posDic[title] + 1
 
-          recFile, posFile = self.splitComplexFiles(outFile, gridDir, title, posDic[title])
+          splitBase = os.path.join(gridDir, f'ifd_{title}_{posDic[title]}')
+          recFile, posFile = splitBase + '_receptor.maegz', splitBase + '_ligand.maegz'
 
           small = SmallMolecule()
           small.copy(smallDict[title], copyId=False)
@@ -437,10 +445,11 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
   def createOutputStep(self):
       nt = self.numberOfThreads.get()
       smallDict = {}
+      # Output titles can be the file basename (e.g. LigPrep states "<mol>-1") or the molName, as in Glide
       for mol in self.inputLibrary.get():
-          fnBase = mol.getMolName()
-          if fnBase not in smallDict:
-              smallDict[fnBase] = mol.clone()
+          for key in (getBaseName(mol.getFileName()), mol.getMolName()):
+              if key not in smallDict:
+                  smallDict[key] = mol.clone()
 
       gridDirs = self.getGridDirs(complete=True)
       allSmallList = performBatchThreading(self.performOutputParsing, gridDirs, nt, cloneItem=False,
@@ -467,24 +476,29 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
   def getAllLigandsFile(self, suffix=''):
       return os.path.abspath(self._getTmpPath('allMoleculesFile{}.mae'.format(suffix)))
 
+  def getLigandMaeFile(self, fnSmall):
+    '''Maestro file each input ligand is read from: itself, or its conversion in tmp'''
+    if '.mae' in fnSmall:
+      return fnSmall
+    return os.path.abspath(self._getTmpPath('{}.mae'.format(os.path.splitext(os.path.basename(fnSmall))[0])))
+
   def convert2mae(self, fnSmall, it):
     baseName = os.path.splitext(os.path.basename(fnSmall))[0]
-    outFile = os.path.abspath(self._getTmpPath('{}.mae'.format(baseName)))
+    outFile = self.getLigandMaeFile(fnSmall)
     if fnSmall.endswith('.pdbqt'):
       # Manage files from autodock: 1) Convert to readable by schro (SDF). 2) correct preparation.
       # 3) Switch to mol2 to manage atom labels
       outDir = os.path.abspath(self._getTmpPath())
       args = ' -i "{}" -of sdf --outputDir "{}" --outputName {}_AD4'.format(os.path.abspath(fnSmall),
                                                                             os.path.abspath(outDir), baseName)
-      pwchemPlugin.runScript(self, 'obabel_IO.py', args, env=OPENBABEL_DIC, cwd=outDir, popen=True)
-      auxFile = os.path.abspath(os.path.join(outDir, '{}_AD4.sdf'.format(baseName)))
-      fnSmall = auxFile.replace('_AD4.sdf', '_aux.sdf')
+      pwchemPlugin.runScript(self, 'obabel_IO.py', args, env=OPENBABEL_DIC, cwd=outDir)
+      fnSmall = os.path.abspath(os.path.join(outDir, '{}_AD4.sdf'.format(baseName)))
+      if not os.path.exists(fnSmall):
+        raise FileNotFoundError(f'OpenBabel did not convert {baseName} to SDF: {fnSmall}')
 
-    args = "{} {}".format(fnSmall, outFile)
-    subprocess.check_call([structConvertProg, *args.split()])
-
-    while not os.path.exists(outFile):
-      time.sleep(0.2)
+    res = subprocess.run([structConvertProg, fnSmall, outFile], capture_output=True, text=True)
+    if res.returncode != 0 or not os.path.exists(outFile):
+      raise RuntimeError(f'structconvert failed for {fnSmall} (exit {res.returncode}):\n{res.stdout}{res.stderr}')
     return outFile
 
   def getGridDirs(self, complete=False):
@@ -736,12 +750,7 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
   def getBindingSiteCenter(self, pocket=None):
     if self.fromPockets.get() == AS:
       pocketId = None
-      inAS = self.inputAtomStruct.get()
-      pdbFile = inAS.getFileName()
-      if not pdbFile.endswith('.pdb'):
-        pdbFile = inAS.convert2PDB(self._getExtraPath('inputStructure.pdb'))
-
-      _, x, y, z = calculate_centerMass(pdbFile)
+      _, x, y, z = calculate_centerMass(self.inputAtomStruct.get().getFileName())
     elif self.fromPockets.get() == POCKET:
       pocketId = pocket.getObjId()
       x, y, z = pocket.calculateMassCenter()
@@ -754,7 +763,7 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
 
   def getDiameter(self, msjDic, pocket=None):
     if self.fromPockets.get() == AS:
-      d = 2 * msjDic['radius']
+      d = 2 * self.radius.get()
     elif self.fromPockets.get() == POCKET:
       d = pocket.getDiameter()
     return d
@@ -787,20 +796,6 @@ class ProtSchrodingerIFD(ProtSchrodingerGlideDocking):
         if scoreName:
           scoreNames.append(scoreName)
     return scoreNames
-
-  def splitComplexFiles(self, oFile, oDir, title, idx):
-    complexFile = os.path.join(oDir, f'ifd_{title}_{idx}.maegz')
-    args = f' -n {idx} {oFile} {complexFile}'
-    subprocess.run(f'{structConvertProg} {args}', check=True, capture_output=True, text=True, shell=True, cwd=oDir)
-
-    args = f' -m pdb -many_files {complexFile} {complexFile}'
-    subprocess.run(f'{runPath} {splitProg} {args}', check=True, capture_output=True, text=True, shell=True,
-                   cwd=oDir)
-
-    os.remove(complexFile)
-    recFile, molFile = complexFile.replace('.maegz', '_receptor1.maegz'), \
-                       complexFile.replace('.maegz', '_ligand1.maegz')
-    return recFile, molFile
 
 
 
