@@ -41,6 +41,7 @@ from ..objects import SchrodingerAtomStruct
 from ..utils.utils import putMolFileTitle, saveMolecule
 
 SMALLMOL, TARGET = 0, 1
+progStructConvert = Plugin.getHome('utilities/structconvert')
 molChoices = {"Maestro": 'maegz', 'PDB': 'pdb', "Sybyl Mol2": 'mol2', "Smiles": 'smi', 'V2000 SD': 'sdf'}
 targetChoices = {"Maestro": 'maegz', 'PDB': 'pdb'}
 
@@ -121,7 +122,6 @@ class ProtSchrodingerConvert(EMProtocol):
         return os.path.relpath(recFile) if recFile.endswith('.pdb') else self.getOutFile(recFile, 'pdb')
 
     def convertMolStep(self, mol):
-        progStructConvert=Plugin.getHome('utilities/structconvert')
 
         fnSmall = self.getMolInFile(mol)
         outFormat = molChoices[self.getEnumText('outputFormatSmall')]
@@ -132,11 +132,9 @@ class ProtSchrodingerConvert(EMProtocol):
             putMolFileTitle(fnOut, ext=outFormat)
 
     def convertReceptorStep(self, recFile):
-        progStructConvert = Plugin.getHome('utilities/structconvert')
         self.runJob(progStructConvert, '{} {}'.format(recFile, os.path.abspath(self.getPDBReceptor(recFile))))
 
     def convertTargetStep(self):
-        progStructConvert = Plugin.getHome('utilities/structconvert')
         fnStructure = self.inputStructure.get().getFileName()
         fnRoot = os.path.splitext(os.path.split(fnStructure)[1])[0]
 
@@ -159,18 +157,7 @@ class ProtSchrodingerConvert(EMProtocol):
             outSet = SetOfSmallMolecules().create(outputPath=self._getPath(), suffix='SmallMols')
 
             if self.usesPoses():
-                outSet.setDocked(True)
-                outSet.setProteinFile(self.getPDBReceptor(inSet.getOriginalReceptorFile()))
-                for mol in inSet:
-                    newMol = mol.clone()
-                    newMol.setPoseFile(self.getOutFile(mol.getPoseFile(), outFormat))
-                    if mol.getProteinFile():
-                        newMol.setProteinFile(self.getPDBReceptor(mol.getProteinFile()))
-                    if outFormat != 'maegz':
-                        # Not Maestro anymore, so viewers other than ChimeraX (e.g. PyMOL) can open it
-                        newMol.setMolClass('Standard')
-                    outSet.append(newMol)
-                outSet.updateMolClass()
+                self.fillDockedSet(inSet, outSet, outFormat)
             else:
                 for mol in inSet:
                     saveMolecule(self, self.getOutFile(mol.smallMoleculeFile.get(), outFormat), outSet, mol)
@@ -179,6 +166,21 @@ class ProtSchrodingerConvert(EMProtocol):
             self._defineSourceRelation(self.inputSmallMolecules, outSet)
         else:
             self._defineOutputs(outputStructure=self.target)
+
+    def fillDockedSet(self, inSet, outSet, outFormat):
+        '''Docked molecules keep their docking info, pointing to the converted pose and PDB receptors'''
+        outSet.setDocked(True)
+        outSet.setProteinFile(self.getPDBReceptor(inSet.getOriginalReceptorFile()))
+        for mol in inSet:
+            newMol = mol.clone()
+            newMol.setPoseFile(self.getOutFile(mol.getPoseFile(), outFormat))
+            if mol.getProteinFile():
+                newMol.setProteinFile(self.getPDBReceptor(mol.getProteinFile()))
+            if outFormat != 'maegz':
+                # Not Maestro anymore, so viewers other than ChimeraX (e.g. PyMOL) can open it
+                newMol.setMolClass('Standard')
+            outSet.append(newMol)
+        outSet.updateMolClass()
 
     def _validate(self):
         errors = []
