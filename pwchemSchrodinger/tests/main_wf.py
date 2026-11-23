@@ -24,6 +24,8 @@
 # *
 # **************************************************************************
 
+import os
+
 from pyworkflow.tests import BaseTest, setupTestProject, DataSet
 from pwem.protocols import ProtImportPdb
 
@@ -32,7 +34,8 @@ from pwchem.tests import TestExtractLigand
 from pwchem.utils import assertHandle
 
 from ..protocols import ProtSchrodingerSiteMap, ProtSchrodingerPrepWizard, \
-    ProtSchrodingerLigPrep, ProtSchrodingerGrid, ProtSchrodingerGlideDocking, ProtSchrodingerMMGBSA
+    ProtSchrodingerLigPrep, ProtSchrodingerGrid, ProtSchrodingerGlideDocking, ProtSchrodingerMMGBSA, \
+    ProtSchrodingerIFD, ProtSchrodingerConvert
 
 class TestSchroProtPrep(BaseTest):
     @classmethod
@@ -200,6 +203,50 @@ class TestGlideDocking(TestGridSchro, TestSchroLigPrep):
         self.assertIsNotNone(getattr(glideProt0, 'outputSmallMolecules', None))
         self.assertIsNotNone(getattr(glideProt1, 'outputSmallMolecules', None))
         self.assertIsNotNone(getattr(glideProt2, 'outputSmallMolecules', None))
+
+
+# Smallest real IFD: initial Glide pose -> Prime refinement of nearby residues -> Glide redock -> IFD score
+IFD_TEST_STEPS = [
+    {"stageType": "Glide", "dockingPrecision": "Medium (SP)", "posesPerLig": 1, "selfDock": "False"},
+    {"stageType": "Compile residues", "residuesCutoff": 5.0},
+    {"stageType": "Residues refinement", "nMinPasses": 1},
+    {"stageType": "Glide", "dockingPrecision": "Medium (SP)", "posesPerLig": 1, "selfDock": "True"},
+    {"stageType": "Score poses", "scoreName": "r_psp_IFDScore",
+     "scoreTerms": "  TERM 1.0,r_i_glide_gscore,0\n  TERM 0.05,r_psp_Prime_Energy,1"},
+]
+
+
+class TestSchroIFD(TestGlideDocking):
+    @classmethod
+    def _runSitemap(cls, targetProt):
+        # One pocket -> one IFD job (IFD runs a job per pocket)
+        protSitemap = cls.newProtocol(
+            ProtSchrodingerSiteMap, inputAtomStruct=targetProt.outputStructure, maxsites=1)
+        cls.proj.launchProtocol(protSitemap, wait=False)
+        return protSitemap
+
+    def test(self):
+        protIFD = self.newProtocol(ProtSchrodingerIFD, fromPockets=1)
+        protIFD.inputStructROIs.set(self.protSitemap)
+        protIFD.inputStructROIs.setExtended('outputStructROIs')
+        protIFD.inputLibrary.set(self.ligProt)
+        protIFD.inputLibrary.setExtended('outputSmallMolecules')
+        # Same stage format the "Default workflows" wizard writes
+        protIFD.workFlowSteps.set(''.join(f'{protIFD.addDefaultForMissing(dict(s))}\n' for s in IFD_TEST_STEPS))
+        self.launchProtocol(protIFD)
+        self.assertIsNotNone(getattr(protIFD, 'outputSmallMolecules', None))
+        self.assertGreater(protIFD.outputSmallMolecules.getSize(), 0, 'IFD output set is empty')
+
+        # Docked (Maestro) poses and their receptors converted to PDB, e.g. for the PyMOL viewer
+        protConv = self.newProtocol(ProtSchrodingerConvert, inputType=0, outputFormatSmall=1, usePose=True)
+        protConv.inputSmallMolecules.set(protIFD)
+        protConv.inputSmallMolecules.setExtended('outputSmallMolecules')
+        self.proj.launchProtocol(protConv, wait=False)
+        self._waitOutput(protConv, 'outputSmallMolecules', sleepTime=5)
+        mol = protConv.outputSmallMolecules.getFirstItem()
+        for fn in (mol.getPoseFile(), mol.getProteinFile(), protConv.outputSmallMolecules.getProteinFile()):
+            self.assertTrue(fn.endswith('.pdb') and os.path.exists(fn), f'Not converted to PDB: {fn}')
+            self.assertFalse(os.path.isabs(fn), f'Path should be relative to the project: {fn}')
 
 
 def getPrepTargetWizardArgs():

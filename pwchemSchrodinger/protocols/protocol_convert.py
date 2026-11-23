@@ -29,10 +29,11 @@ import os
 # Scipion em imports
 from pwem.objects.data import AtomStruct
 from pwem.protocols import EMProtocol
-from pyworkflow.protocol.params import PointerParam, EnumParam, STEPS_PARALLEL
+from pyworkflow.protocol.params import PointerParam, EnumParam, BooleanParam, STEPS_PARALLEL
 
 # Scipion chem imports
 from pwchem.objects import SetOfSmallMolecules
+from pwchem.utils import getBaseName
 
 # Plugin imports
 from .. import Plugin
@@ -40,6 +41,7 @@ from ..objects import SchrodingerAtomStruct
 from ..utils.utils import putMolFileTitle, saveMolecule
 
 SMALLMOL, TARGET = 0, 1
+progStructConvert = Plugin.getHome('utilities/structconvert')
 molChoices = {"Maestro": 'maegz', 'PDB': 'pdb', "Sybyl Mol2": 'mol2', "Smiles": 'smi', 'V2000 SD': 'sdf'}
 targetChoices = {"Maestro": 'maegz', 'PDB': 'pdb'}
 
@@ -66,6 +68,10 @@ class ProtSchrodingerConvert(EMProtocol):
         form.addParam('outputFormatSmall', EnumParam, default=0, condition='{}{}'.format(inputTypeComparison, SMALLMOL),
                       choices=list(molChoices.keys()), label='Output format',
                       help='Output format for the small molecules')
+        form.addParam('usePose', BooleanParam, default=False,
+                      condition='{}{}'.format(inputTypeComparison, SMALLMOL), label='Use the docked ligands: ',
+                      help='Convert the docked poses instead of the original ligand files. Their receptors are '
+                           'also converted to PDB (one per pose if each pose has its own, as in IFD)')
         form.addParam('inputStructure', PointerParam, pointerClass="SchrodingerAtomStruct, AtomStruct",
                       condition='{}{}'.format(inputTypeComparison, TARGET), label='Input structure:',
                       help='Input atomic structure to convert')
@@ -79,10 +85,12 @@ class ProtSchrodingerConvert(EMProtocol):
     def _insertAllSteps(self):
         convSteps = []
         if self.inputType.get() == SMALLMOL:
-            self.outputSmallMolecules = SetOfSmallMolecules().create(outputPath=self._getPath(), suffix='SmallMols')
             for mol in self.inputSmallMolecules.get():
                 cStep = self._insertFunctionStep('convertMolStep', mol.clone(), prerequisites=[])
                 convSteps.append(cStep)
+            # Docked sets: receptors go to PDB, one step per distinct file (IFD has a receptor per pose)
+            for recFile in self.getReceptorFiles():
+                convSteps.append(self._insertFunctionStep('convertReceptorStep', recFile, prerequisites=[]))
 
         elif self.inputType.get() == TARGET:
             cStep = self._insertFunctionStep('convertTargetStep', prerequisites=[])
@@ -90,25 +98,43 @@ class ProtSchrodingerConvert(EMProtocol):
 
         self._insertFunctionStep('createOutputStep', prerequisites=convSteps)
 
+    def usesPoses(self):
+        return self.inputType.get() == SMALLMOL and self.usePose.get()
+
+    def getMolInFile(self, mol):
+        '''With usePose the docked pose is converted, not the original input file'''
+        return mol.getPoseFile() if self.usesPoses() else mol.smallMoleculeFile.get()
+
+    def getOutFile(self, inFile, outFormat):
+        '''Relative to the project, as Scipion stores file paths'''
+        return self._getExtraPath(f'{getBaseName(inFile)}.{outFormat}')
+
+    def getReceptorFiles(self):
+        '''Distinct receptor files of a docked set that are not PDB yet: the set one and, if any, the per pose ones'''
+        if not self.usesPoses():
+            return []
+        inSet = self.inputSmallMolecules.get()
+        recFiles = {os.path.abspath(inSet.getOriginalReceptorFile())}
+        recFiles |= {os.path.abspath(mol.getProteinFile()) for mol in inSet if mol.getProteinFile()}
+        return sorted(f for f in recFiles if not f.endswith('.pdb'))
+
+    def getPDBReceptor(self, recFile):
+        return os.path.relpath(recFile) if recFile.endswith('.pdb') else self.getOutFile(recFile, 'pdb')
+
     def convertMolStep(self, mol):
-        progStructConvert=Plugin.getHome('utilities/structconvert')
 
-        fnSmall = mol.smallMoleculeFile.get()
-        fnRoot = os.path.splitext(os.path.split(fnSmall)[1])[0]
-
+        fnSmall = self.getMolInFile(mol)
         outFormat = molChoices[self.getEnumText('outputFormatSmall')]
-        fnOut = self._getExtraPath("{}.{}".format(fnRoot, outFormat))
+        fnOut = self.getOutFile(fnSmall, outFormat)
 
-        args = '{} {}'.format(fnSmall, fnOut)
-
-        self.runJob(progStructConvert, args)
+        self.runJob(progStructConvert, '{} {}'.format(os.path.abspath(fnSmall), os.path.abspath(fnOut)))
         if outFormat == 'mol2':
             putMolFileTitle(fnOut, ext=outFormat)
 
-        saveMolecule(self, fnOut, self.outputSmallMolecules, mol)
+    def convertReceptorStep(self, recFile):
+        self.runJob(progStructConvert, '{} {}'.format(recFile, os.path.abspath(self.getPDBReceptor(recFile))))
 
     def convertTargetStep(self):
-        progStructConvert = Plugin.getHome('utilities/structconvert')
         fnStructure = self.inputStructure.get().getFileName()
         fnRoot = os.path.splitext(os.path.split(fnStructure)[1])[0]
 
@@ -125,10 +151,42 @@ class ProtSchrodingerConvert(EMProtocol):
             self.target = AtomStruct(filename=fnOut)
 
     def createOutputStep(self):
-        if self.inputType.get() == 0:
-            self._defineOutputs(outputSmallMolecules=self.outputSmallMolecules)
+        if self.inputType.get() == SMALLMOL:
+            inSet = self.inputSmallMolecules.get()
+            outFormat = molChoices[self.getEnumText('outputFormatSmall')]
+            outSet = SetOfSmallMolecules().create(outputPath=self._getPath(), suffix='SmallMols')
+
+            if self.usesPoses():
+                self.fillDockedSet(inSet, outSet, outFormat)
+            else:
+                for mol in inSet:
+                    saveMolecule(self, self.getOutFile(mol.smallMoleculeFile.get(), outFormat), outSet, mol)
+
+            self._defineOutputs(outputSmallMolecules=outSet)
+            self._defineSourceRelation(self.inputSmallMolecules, outSet)
         else:
             self._defineOutputs(outputStructure=self.target)
+
+    def fillDockedSet(self, inSet, outSet, outFormat):
+        '''Docked molecules keep their docking info, pointing to the converted pose and PDB receptors'''
+        outSet.setDocked(True)
+        outSet.setProteinFile(self.getPDBReceptor(inSet.getOriginalReceptorFile()))
+        for mol in inSet:
+            newMol = mol.clone()
+            newMol.setPoseFile(self.getOutFile(mol.getPoseFile(), outFormat))
+            if mol.getProteinFile():
+                newMol.setProteinFile(self.getPDBReceptor(mol.getProteinFile()))
+            if outFormat != 'maegz':
+                # Not Maestro anymore, so viewers other than ChimeraX (e.g. PyMOL) can open it
+                newMol.setMolClass('Standard')
+            outSet.append(newMol)
+        outSet.updateMolClass()
+
+    def _validate(self):
+        errors = []
+        if self.usesPoses() and not self.inputSmallMolecules.get().isDocked():
+            errors.append('"Use the docked ligands" needs a docked set of small molecules as input')
+        return errors
 
     def _summary(self):
         summary=[]
